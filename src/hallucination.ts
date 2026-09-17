@@ -16,6 +16,9 @@ export const WEAK_PEAK = 0.1
 /** Below this much voiced audio a "transcript" is almost certainly invented. */
 export const WEAK_VOICED_MS = 600
 
+// Whisper was trained on subtitled video, so on silence/noise it emits closing
+// credits rather than nothing. This list can never be complete — it is backed by
+// the "mic never got loud" rule below, which catches phrases not listed here.
 const SILENCE_HALLUCINATIONS = new Set([
   "",
   "thank you",
@@ -23,10 +26,18 @@ const SILENCE_HALLUCINATIONS = new Set([
   "thanks for watching",
   "thank you for watching",
   "thanks for watching everyone",
+  "thank you for watching this video",
+  "to be continued",
+  "continued",
+  "to be continued in the next episode",
+  "see you next time",
+  "see you in the next video",
   "please subscribe",
   "subscribe",
+  "like and subscribe",
   "you",
   "bye",
+  "bye bye",
   "okay",
   "ok",
   "oh",
@@ -35,6 +46,8 @@ const SILENCE_HALLUCINATIONS = new Set([
   "amara org",
   "subtitles by",
   "subs by",
+  "subtitle",
+  "www",
 ])
 
 /** Lowercase, strip punctuation, collapse whitespace. */
@@ -54,4 +67,13 @@ export function isSilenceHallucination(text: string, stats: AudioStats): boolean
   const normalized = normalizeTranscript(text)
   if (!SILENCE_HALLUCINATIONS.has(normalized)) return false
   return stats.loudest < WEAK_PEAK || stats.voicedMs < WEAK_VOICED_MS
+}
+
+/**
+ * A transcript is invented if the microphone never clearly heard speech. This
+ * catches hallucinations the phrase list misses, without needing to know what
+ * the model decided to say.
+ */
+export function isWeakSpeech(stats: AudioStats, minPeak: number): boolean {
+  return stats.loudest < minPeak
 }

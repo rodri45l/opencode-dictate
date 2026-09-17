@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { isSilenceHallucination, normalizeTranscript, WEAK_PEAK, WEAK_VOICED_MS } from "../src/hallucination"
+import {
+  isSilenceHallucination,
+  isWeakSpeech,
+  normalizeTranscript,
+  WEAK_PEAK,
+  WEAK_VOICED_MS,
+} from "../src/hallucination"
 
 const WEAK = { voicedMs: 400, loudest: 0.05 }
 const STRONG = { voicedMs: 900, loudest: 0.25 }
@@ -15,6 +21,7 @@ describe("isSilenceHallucination", () => {
   test("drops known artifacts from weak audio", () => {
     expect(isSilenceHallucination("Thank you.", WEAK)).toBe(true)
     expect(isSilenceHallucination("Thanks for watching!", WEAK)).toBe(true)
+    expect(isSilenceHallucination("To be continued...", WEAK)).toBe(true)
     expect(isSilenceHallucination("you", WEAK)).toBe(true)
     expect(isSilenceHallucination("", WEAK)).toBe(true)
   })
@@ -40,5 +47,21 @@ describe("isSilenceHallucination", () => {
 
   test("a long, loud clip passes the guard", () => {
     expect(isSilenceHallucination("thanks", { voicedMs: WEAK_VOICED_MS, loudest: WEAK_PEAK })).toBe(false)
+  })
+})
+
+describe("isWeakSpeech", () => {
+  test("drops any transcript when the mic never got loud", () => {
+    // Catches hallucinations that are not in the phrase list.
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.03 }, 0.05)).toBe(true)
+  })
+
+  test("keeps clearly spoken audio", () => {
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.2 }, 0.05)).toBe(false)
+  })
+
+  test("uses the threshold as an exclusive bound", () => {
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.05 }, 0.05)).toBe(false)
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.0499 }, 0.05)).toBe(true)
   })
 })

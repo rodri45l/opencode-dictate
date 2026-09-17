@@ -6,11 +6,13 @@ import { type VoiceConfig } from "./config"
 import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
-import { isSilenceHallucination } from "./hallucination"
+import { isSilenceHallucination, isWeakSpeech } from "./hallucination"
 
 export interface ListenOptions {
   control: boolean
   permission: boolean
+  /** Optional sink for drop decisions, so they can be tuned from real audio. */
+  log?: (message: string) => void
 }
 
 export async function listen(
@@ -28,9 +30,18 @@ export async function listen(
   try {
     const raw = await transcribe(wavPath, config.stt)
     if (!raw) return ""
-    // Cloud Whisper invents phrases like "Thank you." from noise; drop those
-    // when the clip was too weak to actually be the phrase.
-    if (isSilenceHallucination(raw, captured)) return ""
+    const stats = `voiced=${captured.voicedMs}ms peak=${captured.loudest.toFixed(3)}`
+    // The mic never clearly heard speech, so whatever the model said is made up.
+    // This catches hallucinations the phrase list cannot know about.
+    if (isWeakSpeech(captured, config.vadThreshold * 1.5)) {
+      options.log?.(`drop weak audio (${stats}) transcript="${raw}"`)
+      return ""
+    }
+    // Loud enough to be speech, but a known silence artifact.
+    if (isSilenceHallucination(raw, captured)) {
+      options.log?.(`drop silence hallucination (${stats}) transcript="${raw}"`)
+      return ""
+    }
     if (!config.llm) return raw
     return await clean(raw, config.llm, { control: options.control, permission: options.permission })
   } finally {

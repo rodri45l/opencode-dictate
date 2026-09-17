@@ -37,6 +37,8 @@ export interface VoiceOptions {
   minSpeechMs?: number
   /** Peak amplitude above which a tick counts as voice (default 0.03). */
   vadThreshold?: number
+  /** Write a debug log (same as VOICE_DEBUG=1). */
+  debug?: boolean
   /** Recorder device override (e.g. an avfoundation index). */
   inputDevice?: string
 }
