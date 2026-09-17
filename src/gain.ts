@@ -10,11 +10,20 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
-export const DEFAULT_GAIN = 0.8
+/**
+ * Starting gain. A hot source (the RDP one measured) still peaked at 1.000 with
+ * gain 0.8, so we start halfway and let adaptGain creep up on a quiet mic —
+ * climbing out of a low level is safe, whereas starting hot clips immediately.
+ */
+export const DEFAULT_GAIN = 0.5
 export const MIN_GAIN = 0.2
 export const MAX_GAIN = 1
-/** Above this share of saturated samples we clearly need to back off. */
-export const CLIP_DETECT = 0.005
+/**
+ * Clipping that triggers a gain back-off. Measured: speech transients clip at
+ * most ~0.0004 while a mic knock reaches 0.001-0.012, so 0.005 never fired and
+ * the gain never moved. 0.001 reacts to knocks yet leaves speech alone.
+ */
+export const CLIP_DETECT = 0.001
 /** Below this peak the input is unnecessarily quiet. */
 export const QUIET_PEAK = 0.12
 const DOWN = 0.7

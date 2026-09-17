@@ -17,6 +17,12 @@ describe("adaptGain", () => {
     expect(adaptGain(0.8, 0.02, 0.9)).toBeCloseTo(0.56, 5)
   })
 
+  test("backs off on a light knock too", () => {
+    // The observed knock clipped 0.001 — under the old 0.005 bar, so the gain
+    // never moved. It must react now.
+    expect(adaptGain(0.8, 0.001, 0.9)).toBeCloseTo(0.56, 5)
+  })
+
   test("creeps up when the input is too quiet", () => {
     expect(adaptGain(0.8, 0, 0.05)).toBeCloseTo(0.92, 5)
   })

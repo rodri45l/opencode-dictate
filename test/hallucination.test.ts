@@ -87,6 +87,12 @@ describe("isWeakSpeech", () => {
     expect(isWeakSpeech({ voicedMs: 1600, loudest: 1, periodicity: 0.6, clipped: 0.012 }, 0.05)).toBe(true)
   })
 
+  test("drops a light knock that only just clipped", () => {
+    // The knock that slipped through and was transcribed "Thank you.":
+    // voiced 1200ms, peak 1.0, pitch 0.55, clipped 0.1%.
+    expect(isWeakSpeech({ voicedMs: 1200, loudest: 1, periodicity: 0.55, clipped: 0.001 }, 0.05)).toBe(true)
+  })
+
   test("keeps real speech that only clips on transients", () => {
     // Measured on real recordings: speech never exceeded 0.04% clipping.
     expect(isWeakSpeech({ voicedMs: 4000, loudest: 1, periodicity: 0.5, clipped: 0.0004 }, 0.05)).toBe(false)

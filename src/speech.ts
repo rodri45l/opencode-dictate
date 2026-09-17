@@ -16,10 +16,11 @@ export const MIN_PERIODICITY = 0.15
 export const ARTIFACT_PERIODICITY = 0.3
 /**
  * Fraction of samples pinned at full scale that means the mic was knocked.
- * Measured on real audio: speech transients clip ~0.0000-0.0004, a mic tap
- * saturates ~0.012 — about 30x apart, so 0.2% sits safely between them.
+ * Measured on real audio: speech transients clip at most ~0.0004, while mic
+ * knocks ranged 0.001 (a light tap) to 0.012 (a hard one). 0.001 catches the
+ * light tap and still leaves 2.5x headroom over the loudest real syllable.
  */
-export const CLIPPING_RATIO = 0.002
+export const CLIPPING_RATIO = 0.001
 const FULL_SCALE = 0.98
 
 function bestCorrelation(samples: Float32Array, start: number, frame: number, minLag: number, maxLag: number): number {

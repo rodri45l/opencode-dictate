@@ -48,7 +48,7 @@ export interface VoiceOptions {
     enabled?: boolean
     /** Minimum cosine similarity to the profile (default 0.6). */
     threshold?: number
-    /** Stricter bar for known Whisper artifacts like "Thank you." (default 0.85). */
+    /** Stricter bar for known Whisper artifacts like "Thank you." (default 0.9). */
     artifactThreshold?: number
     /** Utterances to learn from before gating starts (default 8). */
     minSamples?: number
@@ -145,7 +145,10 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
       threshold: num(options.speaker?.threshold ?? Number(env("VOICE_SPEAKER_THRESHOLD")), 0.6),
       artifactThreshold: num(
         options.speaker?.artifactThreshold ?? Number(env("VOICE_SPEAKER_ARTIFACT_THRESHOLD")),
-        0.85,
+        // An observed mic knock was transcribed "Thank you." and scored 0.87,
+        // while real speech scored 0.90-0.98. Whisper's stock phrases are
+        // almost never genuine, so they must match the voiceprint strongly.
+        0.9,
       ),
       minSamples: num(options.speaker?.minSamples ?? Number(env("VOICE_SPEAKER_MIN_SAMPLES")), 8),
     },

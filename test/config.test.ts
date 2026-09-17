@@ -59,7 +59,7 @@ describe("loadConfig", () => {
     expect(config.startTimeoutMs).toBe(4_000)
     expect(config.minSpeechMs).toBe(300)
     expect(config.vadThreshold).toBe(0.03)
-    expect(config.speaker).toEqual({ enabled: false, threshold: 0.6, artifactThreshold: 0.85, minSamples: 8 })
+    expect(config.speaker).toEqual({ enabled: false, threshold: 0.6, artifactThreshold: 0.9, minSamples: 8 })
   })
 
   test("accepts an STT url string and normalises it", () => {
