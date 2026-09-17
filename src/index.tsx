@@ -98,6 +98,8 @@ const VOICE_SYSTEM = [
 const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) => {
   dbg("tui() start")
   const voiceConfig = loadConfig(pluginOptions ?? {})
+  // Only surface a given pipeline error once, so a broken recorder can't spam.
+  let lastVoiceError = ""
   const [builtin, setBuiltin] = createSignal<boolean>(
     voiceConfig.backend === "builtin" || (voiceConfig.backend === "auto" && voiceConfig.stt !== null),
   )
@@ -165,8 +167,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
             },
           )
         } catch (error) {
-          dbg(`pipeline error ${error}`)
-          api.ui.toast({ variant: "warning", message: `Voice: ${(error as Error).message}` })
+          const message = (error as Error).message
+          dbg(`pipeline error ${message}`)
+          if (message !== lastVoiceError) {
+            lastVoiceError = message
+            api.ui.toast({ variant: "warning", message: `Voice: ${message}` })
+          }
           return ""
         } finally {
           setStatus("idle")
@@ -360,8 +366,13 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   // One loop drives everything, so the single-threaded daemon is never contested:
   // an interrupt phrase wins; else if a question/permission is pending the
   // utterance is the answer; otherwise it is sent as a prompt.
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
   async function voiceLoop(): Promise<void> {
     dbg("voiceLoop start")
+    // Guard against spinning: if the recorder yields nothing (no device, error)
+    // we must not respawn in a tight loop and freeze the TUI.
+    let idleRounds = 0
     while (convOn()) {
       let text = ""
       // Tell the LLM which control tokens to consider before it transcribes.
@@ -384,6 +395,8 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       }
       refreshAwaiting()
       setStatus("idle")
+      idleRounds = text ? 0 : idleRounds + 1
+      await sleep(idleRounds > 2 ? 1500 : 250)
     }
     setStatus("idle")
     dbg("voiceLoop end")

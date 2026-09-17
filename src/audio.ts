@@ -1,13 +1,13 @@
 // Cross-platform microphone capture with endpointing.
 //
-// Terminals have no native mic API, so we drive a recorder subprocess (ffmpeg
-// preferred, then arecord/parecord/sox). VAD comes from the recorder itself
-// where possible (ffmpeg `silencedetect`) and, as a fallback, from a simple
-// energy gate over the captured PCM. The same PCM read drives the live level
-// used by the indicator.
+// Terminals have no native mic API, so we drive a recorder subprocess (ffmpeg,
+// parecord, arecord or sox — whichever is installed) writing a 16 kHz mono WAV.
+// We watch the growing file: the PCM gives us the live level, and a simple
+// energy VAD decides where the utterance ends. Recording lives in *our* event
+// loop, so one bad recorder can never spin the TUI.
 
-import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync, openSync, readSync, closeSync, statSync } from "node:fs"
+import { spawn } from "node:child_process"
+import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
@@ -22,14 +22,31 @@ export interface CaptureResult {
   hadSpeech: boolean
 }
 
-const RATE = 16_000
+export interface CaptureConfig {
+  silenceMs: number
+  maxMs: number
+  startTimeoutMs: number
+  inputDevice?: string
+}
 
-/** ffmpeg input flags for the current platform (best-effort). */
+const RATE = 16_000
+const TICK_MS = 80
+const WAV_HEADER = 44
+
+function which(bin: string): boolean {
+  const dirs = (process.env.PATH ?? "").split(":")
+  const exts = process.platform === "win32" ? [".exe", ".cmd", ""] : [""]
+  for (const dir of dirs) {
+    for (const ext of exts) if (dir && existsSync(join(dir, bin + ext))) return true
+  }
+  return false
+}
+
 function ffmpegInput(device?: string): string[] {
   const d = device ?? ""
   switch (process.platform) {
     case "darwin":
-      return ["-f", "avfoundation", "-i", `${d || ":0"}`]
+      return ["-f", "avfoundation", "-i", d || ":0"]
     case "win32":
       return ["-f", "dshow", "-i", `audio=${d || "default"}`]
     default:
@@ -37,108 +54,138 @@ function ffmpegInput(device?: string): string[] {
   }
 }
 
-function which(bin: string): boolean {
-  const paths = (process.env.PATH ?? "").split(":")
-  const exts = process.platform === "win32" ? [".exe", ""] : [""]
-  for (const dir of paths) {
-    for (const ext of exts) if (dir && existsSync(join(dir, bin + ext))) return true
-  }
-  return false
+interface Recorder {
+  cmd: string
+  args: string[]
 }
 
-/**
- * Record one utterance. Resolves once speech has started and then stopped
- * (endpointing), or once the start timeout elapses with no speech.
- * Emits PHASE + level via handlers so the UI can react live.
- */
-export function capture(
-  config: { silenceMs: number; maxMs: number; startTimeoutMs: number; inputDevice?: string },
-  handlers: CaptureHandlers,
-): Promise<CaptureResult> {
+function pickRecorder(config: CaptureConfig, wavPath: string): Recorder | null {
+  const maxSec = (config.maxMs / 1000).toFixed(0)
+  if (which("ffmpeg")) {
+    return {
+      cmd: "ffmpeg",
+      args: [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        ...ffmpegInput(config.inputDevice),
+        "-ac",
+        "1",
+        "-ar",
+        String(RATE),
+        "-t",
+        maxSec,
+        "-y",
+        wavPath,
+      ],
+    }
+  }
+  // PulseAudio / ALSA recorders (Linux, incl. WSLg).
+  if (which("parecord")) {
+    return {
+      cmd: "parecord",
+      args: ["--format=s16le", `--rate=${RATE}`, "--channels=1", "--file-format=wav", wavPath],
+    }
+  }
+  if (which("arecord")) {
+    return { cmd: "arecord", args: ["-f", "S16LE", "-r", String(RATE), "-c", "1", "-t", "wav", wavPath] }
+  }
+  if (which("sox")) {
+    return { cmd: "sox", args: ["-d", "-c", "1", "-r", String(RATE), "-t", "wav", wavPath] }
+  }
+  return null
+}
+
+/** Read new 16-bit samples from the growing WAV and return the peak (0..1). */
+function drainPeak(path: string, offset: number): { peak: number; next: number } {
+  let size = 0
+  try {
+    size = statSync(path).size
+  } catch {
+    return { peak: 0, next: offset }
+  }
+  if (size <= offset || size <= WAV_HEADER) return { peak: 0, next: offset }
+  const length = Math.min(size - offset, 128_000)
+  const buffer = Buffer.alloc(length)
+  const fd = openSync(path, "r")
+  try {
+    readSync(fd, buffer, 0, length, offset)
+  } finally {
+    closeSync(fd)
+  }
+  let peak = 0
+  for (let i = 0; i + 1 < buffer.length; i += 2) {
+    const amp = Math.abs(buffer.readInt16LE(i)) / 32768
+    if (amp > peak) peak = amp
+  }
+  return { peak, next: offset + length }
+}
+
+export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promise<CaptureResult> {
   ensureAudioEnvironment()
   const wavPath = join(tmpdir(), `opencode-dictate-${Date.now()}.wav`)
-  const silenceSec = (config.silenceMs / 1000).toFixed(2)
-  const maxSec = (config.maxMs / 1000).toFixed(2)
-
-  if (!which("ffmpeg")) {
-    // No ffmpeg: caller should surface a helpful error.
-    return Promise.reject(new Error("ffmpeg not found — install ffmpeg to capture audio"))
+  const recorder = pickRecorder(config, wavPath)
+  if (!recorder) {
+    return Promise.reject(new Error("no recorder found — install ffmpeg, parecord, arecord or sox"))
   }
 
-  const args = [
-    "-hide_banner",
-    "-loglevel",
-    "info",
-    ...ffmpegInput(config.inputDevice),
-    "-ac",
-    "1",
-    "-ar",
-    String(RATE),
-    "-af",
-    `silencedetect=noise=-32dB:d=${silenceSec}`,
-    "-t",
-    maxSec,
-    "-y",
-    wavPath,
-  ]
-
   return new Promise<CaptureResult>((resolve, reject) => {
-    const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] })
+    const child = spawn(recorder.cmd, recorder.args, { stdio: ["ignore", "ignore", "pipe"] })
     handlers.onPhase("recording")
 
-    let speechStarted = false
+    const threshold = Number(process.env.VOICE_VAD_THRESHOLD ?? "0.02") || 0.02
+    let offset = WAV_HEADER
+    let spoken = false
+    let quietFor = 0
+    let elapsed = 0
     let stopped = false
-    let startTimer: ReturnType<typeof setTimeout> | undefined
-    let levelTimer: ReturnType<typeof setInterval> | undefined
-    let readOffset = 0
 
     const finish = (hadSpeech: boolean) => {
       if (stopped) return
       stopped = true
-      if (startTimer) clearTimeout(startTimer)
-      if (levelTimer) clearInterval(levelTimer)
-      child.kill("SIGTERM")
+      clearInterval(timer)
+      try {
+        child.kill("SIGTERM")
+      } catch {
+        // already gone
+      }
       resolve({ wavPath, hadSpeech })
     }
 
-    // Live level: sample the growing WAV and report peak amplitude.
-    levelTimer = setInterval(() => {
-      try {
-        const size = statSync(wavPath).size
-        if (size <= readOffset || size < 44) return
-        const fd = openSync(wavPath, "r")
-        const buf = Buffer.alloc(Math.min(size - readOffset, 64_000))
-        readSync(fd, buf, 0, buf.length, readOffset)
-        closeSync(fd)
-        readOffset += buf.length
-        let peak = 0
-        for (let i = 0; i + 1 < buf.length; i += 2) {
-          const amp = Math.abs(buf.readInt16LE(i)) / 32768
-          if (amp > peak) peak = amp
-        }
-        handlers.onLevel(Math.min(1, peak * 1.6))
-      } catch {
-        // file not there yet
-      }
-    }, 80)
+    const timer = setInterval(() => {
+      const { peak, next } = drainPeak(wavPath, offset)
+      offset = next
+      elapsed += TICK_MS
 
-    startTimer = setTimeout(() => finish(speechStarted), config.startTimeoutMs)
+      const level = Math.min(1, peak * 1.8)
+      handlers.onLevel(level)
+      const voicing = peak > threshold
 
-    child.stderr?.on("data", (data: Buffer) => {
-      for (const line of data.toString().split("\n")) {
-        if (line.includes("silence_end")) {
-          // Speech resumed (or began).
-          if (!speechStarted) speechStarted = true
+      if (!spoken) {
+        if (voicing) {
+          spoken = true
+          quietFor = 0
           handlers.onPhase("speech")
-        } else if (line.includes("silence_start") && speechStarted) {
-          // Speech ended — endpoint reached.
-          handlers.onPhase("silence")
-          finish(true)
+        } else if (elapsed >= config.startTimeoutMs) {
+          return finish(false)
         }
+      } else if (voicing) {
+        quietFor = 0
+      } else {
+        if (quietFor === 0) handlers.onPhase("silence")
+        quietFor += TICK_MS
+        if (quietFor >= config.silenceMs) return finish(true)
       }
-    })
 
-    child.on("error", reject)
-    child.on("exit", () => finish(speechStarted))
+      if (elapsed >= config.maxMs) finish(spoken)
+    }, TICK_MS)
+
+    child.on("error", (error) => {
+      if (stopped) return
+      stopped = true
+      clearInterval(timer)
+      reject(error)
+    })
+    child.on("exit", () => finish(spoken))
   })
 }
