@@ -1,6 +1,8 @@
 // Configuration for the voice pipeline, resolved from the environment.
 // Everything is optional; a sensible default is chosen where possible.
 
+import { resolveOpencodeLlm } from "./llm"
+
 export interface SttConfig {
   /** OpenAI-compatible /audio/transcriptions endpoint (local server or cloud). */
   url: string
@@ -13,6 +15,8 @@ export interface LlmConfig {
   url: string
   key: string
   model: string
+  /** Provider id, e.g. "opencode-go", "deepseek", or "custom". */
+  provider: string
 }
 
 export interface VoiceConfig {
@@ -50,14 +54,23 @@ export function loadConfig(): VoiceConfig {
   const sttUrl = env("VOICE_STT_URL")
   const llmUrl = env("VOICE_LLM_URL")
 
+  // Cleanup LLM: explicit env wins, else reuse the LLM opencode already has,
+  // so users only need to configure speech-to-text.
+  const llm: LlmConfig | null = llmUrl
+    ? {
+        url: base(llmUrl),
+        key: env("VOICE_LLM_KEY"),
+        model: env("VOICE_LLM_MODEL") || "gpt-4o-mini",
+        provider: "custom",
+      }
+    : resolveOpencodeLlm()
+
   return {
     recorder: env("VOICE_RECORDER") || null,
     stt: sttUrl
       ? { url: base(sttUrl), key: env("VOICE_STT_KEY"), model: env("VOICE_STT_MODEL") || "whisper-1" }
       : null,
-    llm: llmUrl
-      ? { url: base(llmUrl), key: env("VOICE_LLM_KEY"), model: env("VOICE_LLM_MODEL") || "gpt-4o-mini" }
-      : null,
+    llm,
     silenceMs: num("VOICE_SILENCE_MS", 900),
     maxMs: num("VOICE_MAX_MS", 60_000),
     startTimeoutMs: num("VOICE_START_TIMEOUT_MS", 4_000),

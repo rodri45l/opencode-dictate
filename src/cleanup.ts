@@ -2,6 +2,7 @@
 // classify spoken control commands into sentinels the plugin matches exactly.
 // The model makes the decision; we only match tokens.
 
+import { randomUUID } from "node:crypto"
 import type { LlmConfig } from "./config"
 
 const BASE = [
@@ -33,16 +34,22 @@ export async function clean(text: string, llm: LlmConfig, options: CleanOptions)
   if (options.control) parts.push(CONTROL)
   if (options.permission) parts.push(PERMISSION)
 
+  // The opencode.ai gateway routes per session and supports reasoning_effort;
+  // keep the cleanup cheap by leaving thinking off.
+  const gateway = llm.url.includes("opencode.ai")
   const response = await fetch(`${llm.url}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "User-Agent": "opencode-dictate/0.1",
       ...(llm.key ? { Authorization: `Bearer ${llm.key}` } : {}),
+      ...(gateway ? { "x-opencode-session": randomUUID() } : {}),
     },
     body: JSON.stringify({
       model: llm.model,
       temperature: 0,
       max_tokens: 1024,
+      ...(gateway ? { reasoning_effort: "none" } : {}),
       messages: [
         { role: "system", content: parts.join("\n\n") },
         { role: "user", content: text },
