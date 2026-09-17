@@ -493,12 +493,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     return <text>{cells()}</text>
   }
 
-  let indicatorLogged = false
+  // Diagnostics: log whenever the state the indicator depends on changes, so we
+  // can tell whether the slot is reacting or the content is merely clipped.
+  createEffect(() => {
+    dbg(`indicator state conv=${convOn()} status=${status()}`)
+  })
   function Indicator(): JSX.Element {
-    if (!indicatorLogged) {
-      indicatorLogged = true
-      dbg("indicator render")
-    }
     // Text is only for things the scanner cannot express: a transient notice or
     // a pending question. Recording vs transcribing is the scanner colour.
     const label = () => {
@@ -527,6 +527,10 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
             </Show>
             <Show when={label() !== ""}>
               <text fg={color()}>{label()}</text>
+            </Show>
+            {/* Plain text alongside the scanner: proves the line is on screen. */}
+            <Show when={convOn()}>
+              <text fg={scannerColor()}>{status() === "idle" ? "listening" : status()}</text>
             </Show>
           </box>
         </box>
