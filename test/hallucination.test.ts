@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  isArtifact,
   isSilenceHallucination,
   isWeakSpeech,
   normalizeTranscript,
@@ -16,6 +17,19 @@ describe("normalizeTranscript", () => {
   test("strips punctuation and collapses whitespace", () => {
     expect(normalizeTranscript("Thank you!!")).toBe("thank you")
     expect(normalizeTranscript("  THANKS,   for watching. ")).toBe("thanks for watching")
+  })
+})
+
+describe("isArtifact", () => {
+  test("recognises artifacts regardless of the audio", () => {
+    expect(isArtifact("Thank you.")).toBe(true)
+    expect(isArtifact("TO BE CONTINUED...")).toBe(true)
+    expect(isArtifact("you")).toBe(true)
+  })
+
+  test("does not flag real prompts", () => {
+    expect(isArtifact("stop the server")).toBe(false)
+    expect(isArtifact("open the config file")).toBe(false)
   })
 })
 

@@ -69,9 +69,13 @@ export function normalizeTranscript(text: string): string {
  * True when a transcript looks like a silence artifact and the audio it came
  * from was too weak to plausibly be that phrase.
  */
+/** Is this text a known Whisper silence artifact, regardless of the audio? */
+export function isArtifact(text: string): boolean {
+  return SILENCE_HALLUCINATIONS.has(normalizeTranscript(text))
+}
+
 export function isSilenceHallucination(text: string, stats: AudioStats): boolean {
-  const normalized = normalizeTranscript(text)
-  if (!SILENCE_HALLUCINATIONS.has(normalized)) return false
+  if (!isArtifact(text)) return false
   // A finger tap on the mic is loud, so loudness alone would keep it; it is not
   // periodic, which is what actually separates it from someone saying the phrase.
   return stats.loudest < WEAK_PEAK || stats.voicedMs < WEAK_VOICED_MS || stats.periodicity < ARTIFACT_PERIODICITY

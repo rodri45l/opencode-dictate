@@ -6,7 +6,7 @@ import { type VoiceConfig } from "./config"
 import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
-import { isSilenceHallucination, isWeakSpeech } from "./hallucination"
+import { isArtifact, isSilenceHallucination, isWeakSpeech } from "./hallucination"
 import { enroll, loadProfile, saveProfile, similarity } from "./voiceprint"
 
 export interface ListenOptions {
@@ -60,8 +60,13 @@ export async function listen(
         )
       } else {
         const score = similarity(captured.print, profile)
-        if (score < config.speaker.threshold) {
-          options.log?.(`drop other speaker (similarity=${score.toFixed(2)}) transcript="${raw}"`)
+        // "Thank you." and friends are Whisper's default output for anything
+        // voice-like, so demand far more evidence that it was really the user.
+        const required = isArtifact(raw)
+          ? Math.max(config.speaker.threshold, config.speaker.artifactThreshold)
+          : config.speaker.threshold
+        if (score < required) {
+          options.log?.(`drop other speaker (similarity=${score.toFixed(2)} < ${required}) transcript="${raw}"`)
           return ""
         }
         options.log?.(`speaker ok (similarity=${score.toFixed(2)})`)

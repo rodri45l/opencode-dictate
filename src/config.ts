@@ -44,6 +44,8 @@ export interface VoiceOptions {
     enabled?: boolean
     /** Minimum cosine similarity to the profile (default 0.6). */
     threshold?: number
+    /** Stricter bar for known Whisper artifacts like "Thank you." (default 0.85). */
+    artifactThreshold?: number
     /** Utterances to learn from before gating starts (default 8). */
     minSamples?: number
   }
@@ -62,7 +64,7 @@ export interface VoiceConfig {
   startTimeoutMs: number
   minSpeechMs: number
   vadThreshold: number
-  speaker: { enabled: boolean; threshold: number; minSamples: number }
+  speaker: { enabled: boolean; threshold: number; artifactThreshold: number; minSamples: number }
   inputDevice?: string
 }
 
@@ -133,6 +135,10 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
     speaker: {
       enabled: options.speaker?.enabled ?? /^(1|true|on)$/i.test(env("VOICE_SPEAKER")),
       threshold: num(options.speaker?.threshold ?? Number(env("VOICE_SPEAKER_THRESHOLD")), 0.6),
+      artifactThreshold: num(
+        options.speaker?.artifactThreshold ?? Number(env("VOICE_SPEAKER_ARTIFACT_THRESHOLD")),
+        0.85,
+      ),
       minSamples: num(options.speaker?.minSamples ?? Number(env("VOICE_SPEAKER_MIN_SAMPLES")), 8),
     },
     inputDevice: options.inputDevice ?? (env("VOICE_INPUT_DEVICE") || undefined),
