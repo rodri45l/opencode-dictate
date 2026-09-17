@@ -498,7 +498,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   createEffect(() => {
     dbg(`indicator state conv=${convOn()} status=${status()}`)
   })
-  function Indicator(): JSX.Element {
+  function Indicator(props: { compact?: boolean } = {}): JSX.Element {
     // Text is only for things the scanner cannot express: a transient notice or
     // a pending question. Recording vs transcribing is the scanner colour.
     const label = () => {
@@ -512,26 +512,27 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       if (alertColor()) return alertColor()
       return status() === "speaking" ? RED : status() === "transcribing" ? AMBER : IDLE
     }
-    // The row is rendered unconditionally, with a blank spacer when idle. The
-    // host lays the prompt slot out at the prompt's height and does not grow it
-    // when a row appears later, so a row inserted on toggle was being dropped.
-    // Reserving it up front keeps the scanner on screen.
+    const row = (
+      <box flexDirection="row" gap={2} justifyContent="center">
+        <Show when={convOn()}>
+          <Show
+            when={indicator() === "waves"}
+            fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
+          >
+            <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
+          </Show>
+        </Show>
+        <Show when={label() !== ""}>
+          <text fg={color()}>{label()}</text>
+        </Show>
+      </box>
+    )
+    // The composer only lays out the prompt itself, so a sibling row is dropped.
+    // Compact mode renders just the row, for the prompt's meta row.
+    if (props.compact) return row
     return (
       <box flexDirection="column" marginBottom={1}>
-        {/* Centred over the prompt rather than indented with it. */}
-        <box flexDirection="row" gap={2} justifyContent="center">
-          <Show when={convOn()} fallback={<text>{" "}</text>}>
-            <Show
-              when={indicator() === "waves"}
-              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
-            >
-              <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
-            </Show>
-          </Show>
-          <Show when={label() !== ""}>
-            <text fg={color()}>{label()}</text>
-          </Show>
-        </box>
+        {row}
       </box>
     )
   }
@@ -623,17 +624,19 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           refreshAwaiting()
           try {
             return (
-              <box flexDirection="column">
-                <Indicator />
-                <api.ui.Prompt
-                  sessionID={input.session_id}
-                  visible={input.visible}
-                  disabled={input.disabled}
-                  onSubmit={input.on_submit}
-                  ref={(r) => bind(r, input.ref)}
-                  right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
-                />
-              </box>
+              <api.ui.Prompt
+                sessionID={input.session_id}
+                visible={input.visible}
+                disabled={input.disabled}
+                onSubmit={input.on_submit}
+                ref={(r) => bind(r, input.ref)}
+                right={
+                  <box flexDirection="row" gap={2}>
+                    <Indicator compact />
+                    <api.ui.Slot name="session_prompt_right" session_id={input.session_id} />
+                  </box>
+                }
+              />
             )
           } catch (error) {
             // Never take the prompt down with us; log so the failure is visible.
@@ -645,10 +648,15 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           dbg("slot home_prompt called")
           try {
             return (
-              <box flexDirection="column">
-                <Indicator />
-                <api.ui.Prompt ref={(r) => bind(r, input.ref)} right={<api.ui.Slot name="home_prompt_right" />} />
-              </box>
+              <api.ui.Prompt
+                ref={(r) => bind(r, input.ref)}
+                right={
+                  <box flexDirection="row" gap={2}>
+                    <Indicator compact />
+                    <api.ui.Slot name="home_prompt_right" />
+                  </box>
+                }
+              />
             )
           } catch (error) {
             dbg(`home_prompt render failed: ${error}`)
