@@ -35,11 +35,13 @@
 import type { TuiPlugin, TuiPluginApi, TuiPromptRef, TuiSlotContext, TuiSlotPlugin } from "@opencode-ai/plugin/tui"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 import type { JSX } from "@opentui/solid"
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { spawn, type ChildProcess } from "node:child_process"
 import { appendFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { loadConfig } from "./config"
+import { listen } from "./pipeline"
 
 const SCRIPT = join(homedir(), ".local", "bin", "dictate")
 const DICTATE_KEYS = ["<leader>d", "f9"]
@@ -94,6 +96,7 @@ const VOICE_SYSTEM = [
 
 const tui: TuiPlugin = async (api: TuiPluginApi) => {
   dbg("tui() start")
+  const voiceConfig = loadConfig()
   const [status, setStatus] = createSignal<Status>("idle")
   const [convOn, setConvOn] = createSignal(false)
   const [awaiting, setAwaiting] = createSignal("")
@@ -128,6 +131,34 @@ const tui: TuiPlugin = async (api: TuiPluginApi) => {
   }
 
   function spawnDictate(conv: boolean, mode?: "permission"): Promise<string> {
+    // Preferred: builtin cross-platform pipeline (capture + VAD + transcribe +
+    // cleanup), used when an STT endpoint is configured. Falls back to the
+    // external `dictate` command otherwise.
+    if (voiceConfig.stt) {
+      return (async () => {
+        setStatus("recording")
+        try {
+          return await listen(
+            voiceConfig,
+            { control: conv, permission: mode === "permission" },
+            {
+              onPhase: (name) => {
+                if (name === "transcribing") setStatus("transcribing")
+                else if (name === "speech") setStatus("speaking")
+                else setStatus("recording")
+              },
+              onLevel: (value) => setLevel(value),
+            },
+          )
+        } catch (error) {
+          dbg(`pipeline error ${error}`)
+          api.ui.toast({ variant: "warning", message: `Voice: ${(error as Error).message}` })
+          return ""
+        } finally {
+          setStatus("idle")
+        }
+      })()
+    }
     return new Promise((resolve, reject) => {
       const base = (globalThis as { process?: { env?: Record<string, string> } }).process?.env ?? {}
       const env = {

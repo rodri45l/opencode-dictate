@@ -43,23 +43,27 @@ or add it to `~/.config/opencode/tui.json`:
 }
 ```
 
-## Configuration (WIP)
+## Configuration
 
-The backend and cleanup are meant to be **swappable commands**, so you can use your
-own GPU or an external service:
+The builtin pipeline is enabled by pointing the plugin at a **speech-to-text
+endpoint** (any OpenAI-compatible `/audio/transcriptions`, local or cloud) and,
+optionally, an **LLM** for cleanup + voice commands. Set these in the
+environment opencode runs in:
 
-```jsonc
-{
-  "voice": {
-    // record one utterance -> print transcript on stdout,
-    // emit PHASE:speech|silence|level on stderr
-    "backend": "whisper-server",
-    "backendUrl": "http://127.0.0.1:8080/v1/audio/transcriptions",
-    // optional: clean the transcript and classify control commands
-    "cleanup": "opencode-go/deepseek-v4.1-flash"
-  }
-}
-```
+| Variable | Meaning |
+|---|---|
+| `VOICE_STT_URL` | e.g. `http://127.0.0.1:8080/v1` (local whisper server) or `https://api.openai.com/v1` |
+| `VOICE_STT_KEY` | API key (omit for a local server) |
+| `VOICE_STT_MODEL` | default `whisper-1` |
+| `VOICE_LLM_URL` | optional OpenAI-compatible base for cleanup + `[[STOP]]`-style commands |
+| `VOICE_LLM_KEY`, `VOICE_LLM_MODEL` | credentials/model for the above |
+| `VOICE_SILENCE_MS` | silence that ends an utterance (default 900) |
+| `VOICE_MAX_MS` | max utterance length (default 60000) |
+| `VOICE_INPUT_DEVICE` | recorder device override (e.g. an avfoundation index) |
+
+Audio is captured with **ffmpeg** (cross-platform), which must be on `PATH`.
+If no `VOICE_STT_URL` is set, the plugin falls back to an external `dictate`
+command on `PATH` (e.g. a local GPU Whisper build).
 
 ## Architecture
 
