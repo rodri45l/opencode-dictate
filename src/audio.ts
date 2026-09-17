@@ -216,7 +216,19 @@ interface Recorder {
   args: string[]
 }
 
-function pickRecorder(config: CaptureConfig, wavPath: string, gain: number): Recorder | null {
+/**
+ * Give a recorder a deadline of its own. Killing by signal is not enough: if the
+ * TUI dies abruptly (Ctrl+D through the WSL relay SIGKILLs it) nothing runs our
+ * cleanup, and an untouched recorder keeps the microphone and its file forever.
+ * GNU timeout enforces the limit itself and forwards the SIGTERM we send, so a
+ * stranded recorder still stops on its own. `hasTimeout` is injectable for tests.
+ */
+export function withDeadline(recorder: Recorder, maxSec: string, hasTimeout = which("timeout")): Recorder {
+  if (!hasTimeout) return recorder
+  return { cmd: "timeout", args: ["-k", "3", maxSec, recorder.cmd, ...recorder.args] }
+}
+
+export function pickRecorder(config: CaptureConfig, wavPath: string, gain: number): Recorder | null {
   const maxSec = (config.maxMs / 1000).toFixed(0)
   const factor = gain.toFixed(2)
   if (which("ffmpeg")) {
@@ -244,23 +256,32 @@ function pickRecorder(config: CaptureConfig, wavPath: string, gain: number): Rec
   // 0..65536, so we can keep a hot RDP microphone out of clipping before it is
   // written; arecord has no gain option.
   if (which("parecord")) {
-    return {
-      cmd: "parecord",
-      args: [
-        "--format=s16le",
-        `--rate=${RATE}`,
-        "--channels=1",
-        `--volume=${Math.round(gain * 65536)}`,
-        "--file-format=wav",
-        wavPath,
-      ],
-    }
+    // parecord has no duration option, so the deadline comes from the wrapper.
+    return withDeadline(
+      {
+        cmd: "parecord",
+        args: [
+          "--format=s16le",
+          `--rate=${RATE}`,
+          "--channels=1",
+          `--volume=${Math.round(gain * 65536)}`,
+          "--file-format=wav",
+          wavPath,
+        ],
+      },
+      maxSec,
+    )
   }
   if (which("arecord")) {
-    return { cmd: "arecord", args: ["-f", "S16LE", "-r", String(RATE), "-c", "1", "-t", "wav", wavPath] }
+    // -d is arecord's own duration in seconds; -t selects the file type.
+    return { cmd: "arecord", args: ["-f", "S16LE", "-r", String(RATE), "-c", "1", "-t", "wav", "-d", maxSec, wavPath] }
   }
   if (which("sox")) {
-    return { cmd: "sox", args: ["-d", "-c", "1", "-r", String(RATE), "-t", "wav", wavPath, "vol", factor] }
+    // "trim 0 <sec>" ends the recording after the deadline.
+    return {
+      cmd: "sox",
+      args: ["-d", "-c", "1", "-r", String(RATE), "-t", "wav", wavPath, "trim", "0", maxSec, "vol", factor],
+    }
   }
   return null
 }
