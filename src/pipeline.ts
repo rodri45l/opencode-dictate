@@ -6,7 +6,8 @@ import { type VoiceConfig } from "./config"
 import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
-import { isArtifact, isImplausibleRate, isSilenceHallucination, isWeakSpeech } from "./hallucination"
+import { isArtifact, isSilenceHallucination, isWeakSpeech } from "./hallucination"
+import { isImplausibleRate, learnRate, loadRate, rateLimit, saveRate } from "./rate"
 import { enroll, loadProfile, saveProfile, similarity } from "./voiceprint"
 
 export interface ListenOptions {
@@ -51,9 +52,12 @@ export async function listen(
       return ""
     }
     // A whole sentence cannot fit in the voice we recorded: the model invented
-    // it. This catches sign-off phrases the artifact list has never seen.
-    if (isImplausibleRate(raw, captured.voicedMs)) {
-      options.log?.(`drop impossible speech rate (${stats}) transcript="${raw}"`)
+    // it. This catches sign-off phrases the artifact list has never seen, with
+    // the limit set from how fast this user actually talks.
+    const rateProfile = loadRate()
+    const limit = rateLimit(rateProfile)
+    if (isImplausibleRate(raw, captured.voicedMs, limit)) {
+      options.log?.(`drop impossible speech rate (limit=${limit.toFixed(1)}/s, ${stats}) transcript="${raw}"`)
       return ""
     }
     // Speaker check: learn the voice first, then reject other speakers. This is a
@@ -83,6 +87,9 @@ export async function listen(
         options.log?.(`speaker ok (similarity=${score.toFixed(2)})`)
       }
     }
+    // Everything below this point is the user actually speaking, so it is safe
+    // to learn their pace from it (a hallucination cannot get here).
+    saveRate(learnRate(rateProfile, raw, captured.voicedMs, limit))
     options.log?.(`keep (${stats}) transcript="${raw}"`)
     if (!config.llm) return raw
     return await clean(raw, config.llm, { control: options.control, permission: options.permission })
