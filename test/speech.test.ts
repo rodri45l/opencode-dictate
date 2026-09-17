@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { decodePcm, periodicity } from "../src/speech"
+import { clippingRatio, decodePcm, periodicity } from "../src/speech"
 
 const RATE = 16_000
 
@@ -42,6 +42,26 @@ describe("periodicity", () => {
 
   test("too-short input scores zero", () => {
     expect(periodicity(new Float32Array(10), RATE)).toBe(0)
+  })
+})
+
+describe("clippingRatio", () => {
+  test("clean speech-like audio does not clip", () => {
+    expect(clippingRatio(sine(150, 1, 0.4))).toBe(0)
+  })
+
+  test("a saturated signal is fully clipped", () => {
+    expect(clippingRatio(new Float32Array(1000).fill(1))).toBe(1)
+  })
+
+  test("reports the share of samples pinned at full scale", () => {
+    const samples = new Float32Array(1000)
+    for (let i = 0; i < 250; i++) samples[i] = -1
+    expect(clippingRatio(samples)).toBeCloseTo(0.25, 6)
+  })
+
+  test("empty input is not clipped", () => {
+    expect(clippingRatio(new Float32Array(0))).toBe(0)
   })
 })
 

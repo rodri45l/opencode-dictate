@@ -4,7 +4,7 @@
 // those outputs, but only when the captured audio was too weak to be that phrase
 // — so a genuine "thank you" still gets through.
 
-import { ARTIFACT_PERIODICITY, MIN_PERIODICITY } from "./speech"
+import { ARTIFACT_PERIODICITY, CLIPPING_RATIO, MIN_PERIODICITY } from "./speech"
 
 export interface AudioStats {
   /** Milliseconds of voiced audio in the clip. */
@@ -13,6 +13,8 @@ export interface AudioStats {
   loudest: number
   /** Quasi-periodicity (0..1); speech is periodic, a mic knock is not. */
   periodicity: number
+  /** Share of samples at full scale; a knock saturates, speech mostly doesn't. */
+  clipped: number
 }
 
 /** Peak below this means nothing clearly speech-like was captured. */
@@ -81,5 +83,6 @@ export function isSilenceHallucination(text: string, stats: AudioStats): boolean
  * the model decided to say.
  */
 export function isWeakSpeech(stats: AudioStats, minPeak: number): boolean {
-  return stats.loudest < minPeak || stats.periodicity < MIN_PERIODICITY
+  // A saturated clip is a knock/tap, however loud and periodic it looks.
+  return stats.loudest < minPeak || stats.periodicity < MIN_PERIODICITY || stats.clipped >= CLIPPING_RATIO
 }

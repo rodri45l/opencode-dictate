@@ -12,7 +12,7 @@ import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
 import { voiceprint } from "./mfcc"
-import { decodePcm, periodicity } from "./speech"
+import { clippingRatio, decodePcm, periodicity } from "./speech"
 import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
 
 export interface CaptureHandlers {
@@ -28,6 +28,8 @@ export interface CaptureResult {
   loudest: number
   /** Quasi-periodicity of the clip (0..1); speech is periodic, knocks are not. */
   periodicity: number
+  /** Share of samples at full scale; a mic knock saturates the input. */
+  clipped: number
   /** MFCC voiceprint, only computed when speaker verification is enabled. */
   print: Float32Array | null
 }
@@ -245,11 +247,13 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       // Whisper (which would otherwise invent a sentence).
       const spoken = hadSpeech(state, vadConfig)
       let strength = 0
+      let clipped = 0
       let print: Float32Array | null = null
       if (spoken) {
         try {
           const samples = decodePcm(readFileSync(wavPath), WAV_HEADER)
           strength = periodicity(samples, RATE)
+          clipped = clippingRatio(samples)
           if (config.speaker?.enabled) print = voiceprint(samples, RATE)
         } catch {
           // unreadable clip — leave strength at 0, the guard will drop it
@@ -261,6 +265,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
         voicedMs: state.voicedMs,
         loudest: state.loudest,
         periodicity: strength,
+        clipped,
         print,
       })
     }

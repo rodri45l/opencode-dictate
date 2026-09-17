@@ -8,9 +8,9 @@ import {
 } from "../src/hallucination"
 
 // Weak audio: quiet, short, and not periodic.
-const WEAK = { voicedMs: 400, loudest: 0.05, periodicity: 0.05 }
-// Clear speech: loud, long, strongly periodic.
-const STRONG = { voicedMs: 900, loudest: 0.25, periodicity: 0.6 }
+const WEAK = { voicedMs: 400, loudest: 0.05, periodicity: 0.05, clipped: 0 }
+// Clear speech: loud, long, strongly periodic, not saturated.
+const STRONG = { voicedMs: 900, loudest: 0.25, periodicity: 0.6, clipped: 0 }
 
 describe("normalizeTranscript", () => {
   test("strips punctuation and collapses whitespace", () => {
@@ -34,7 +34,7 @@ describe("isSilenceHallucination", () => {
 
   test("drops an artifact from a loud but aperiodic mic knock", () => {
     // The finger-tap case: loud and long enough, but no pitch at all.
-    const knock = { voicedMs: 900, loudest: 0.5, periodicity: 0.05 }
+    const knock = { voicedMs: 900, loudest: 0.5, periodicity: 0.05, clipped: 0 }
     expect(isSilenceHallucination("Thank you.", knock)).toBe(true)
   })
 
@@ -44,37 +44,41 @@ describe("isSilenceHallucination", () => {
   })
 
   test("treats a loud-but-brief clip as weak", () => {
-    const brief = { voicedMs: WEAK_VOICED_MS - 1, loudest: 0.4, periodicity: 0.6 }
+    const brief = { voicedMs: WEAK_VOICED_MS - 1, loudest: 0.4, periodicity: 0.6, clipped: 0 }
     expect(isSilenceHallucination("thank you", brief)).toBe(true)
   })
 
   test("treats a quiet-but-long clip as weak", () => {
-    const quiet = { voicedMs: 1500, loudest: WEAK_PEAK - 0.01, periodicity: 0.6 }
+    const quiet = { voicedMs: 1500, loudest: WEAK_PEAK - 0.01, periodicity: 0.6, clipped: 0 }
     expect(isSilenceHallucination("thanks", quiet)).toBe(true)
   })
 
   test("a long, loud, periodic clip passes the guard", () => {
-    expect(isSilenceHallucination("thanks", { voicedMs: WEAK_VOICED_MS, loudest: WEAK_PEAK, periodicity: 0.6 })).toBe(
-      false,
-    )
+    const clear = { voicedMs: WEAK_VOICED_MS, loudest: WEAK_PEAK, periodicity: 0.6, clipped: 0 }
+    expect(isSilenceHallucination("thanks", clear)).toBe(false)
   })
 })
 
 describe("isWeakSpeech", () => {
   test("drops any transcript when the mic never got loud", () => {
-    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.03, periodicity: 0.6 }, 0.05)).toBe(true)
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.03, periodicity: 0.6, clipped: 0 }, 0.05)).toBe(true)
   })
 
   test("drops any transcript from aperiodic audio", () => {
-    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.5, periodicity: 0.05 }, 0.05)).toBe(true)
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.5, periodicity: 0.05, clipped: 0 }, 0.05)).toBe(true)
+  })
+
+  test("drops a saturated mic knock even though it is loud and periodic", () => {
+    // The observed pop: peak 1.0, pitch 0.60, yet the input was clipping.
+    expect(isWeakSpeech({ voicedMs: 1600, loudest: 1, periodicity: 0.6, clipped: 0.4 }, 0.05)).toBe(true)
   })
 
   test("keeps clearly spoken audio", () => {
-    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.2, periodicity: 0.5 }, 0.05)).toBe(false)
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.2, periodicity: 0.5, clipped: 0 }, 0.05)).toBe(false)
   })
 
   test("uses the threshold as an exclusive bound", () => {
-    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.05, periodicity: 0.6 }, 0.05)).toBe(false)
-    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.0499, periodicity: 0.6 }, 0.05)).toBe(true)
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.05, periodicity: 0.6, clipped: 0 }, 0.05)).toBe(false)
+    expect(isWeakSpeech({ voicedMs: 900, loudest: 0.0499, periodicity: 0.6, clipped: 0 }, 0.05)).toBe(true)
   })
 })

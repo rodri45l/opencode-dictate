@@ -14,6 +14,9 @@ const FRAME_MS = 32
 export const MIN_PERIODICITY = 0.15
 /** Below this, a known silence artifact is considered invented. */
 export const ARTIFACT_PERIODICITY = 0.3
+/** Fraction of samples pinned at full scale that means the mic was knocked. */
+export const CLIPPING_RATIO = 0.02
+const FULL_SCALE = 0.98
 
 function bestCorrelation(samples: Float32Array, start: number, frame: number, minLag: number, maxLag: number): number {
   let energy0 = 0
@@ -54,6 +57,18 @@ export function periodicity(samples: Float32Array, rate: number): number {
     total += bestCorrelation(samples, start, frame, minLag, maxLag)
   }
   return counted === 0 ? 0 : total / counted
+}
+
+/**
+ * Share of samples sitting at full scale. A knock or a hard tap saturates the
+ * input — speech, even loud speech, rarely does for long. This is what lets us
+ * tell a mic bump from someone actually talking into it.
+ */
+export function clippingRatio(samples: Float32Array): number {
+  if (samples.length === 0) return 0
+  let clipped = 0
+  for (let i = 0; i < samples.length; i++) if (Math.abs(samples[i]) >= FULL_SCALE) clipped++
+  return clipped / samples.length
 }
 
 /** Decode 16-bit little-endian PCM (mono) into -1..1 floats. */
