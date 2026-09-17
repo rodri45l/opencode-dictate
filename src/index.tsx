@@ -35,7 +35,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPromptRef, TuiSlotContext, TuiSlotPlugin } from "@opencode-ai/plugin/tui"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 import type { JSX } from "@opentui/solid"
-import { createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { spawn, type ChildProcess } from "node:child_process"
 import { appendFileSync } from "node:fs"
 import { homedir } from "node:os"
