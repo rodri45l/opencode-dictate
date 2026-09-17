@@ -624,18 +624,19 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           sessionId = input.session_id
           refreshAwaiting()
           try {
+            // The indicator rides inside the Prompt (its `hint`), not as a sibling
+            // row: the host lays the prompt slot out at prompt height, so an extra
+            // row above it gets clipped.
             return (
-              <box flexDirection="column">
-                <Indicator />
-                <api.ui.Prompt
-                  sessionID={input.session_id}
-                  visible={input.visible}
-                  disabled={input.disabled}
-                  onSubmit={input.on_submit}
-                  ref={(r) => bind(r, input.ref)}
-                  right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
-                />
-              </box>
+              <api.ui.Prompt
+                sessionID={input.session_id}
+                visible={input.visible}
+                disabled={input.disabled}
+                onSubmit={input.on_submit}
+                ref={(r) => bind(r, input.ref)}
+                hint={<Indicator />}
+                right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
+              />
             )
           } catch (error) {
             // Never take the prompt down with us; log so the failure is visible.
@@ -647,15 +648,21 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           dbg("slot home_prompt called")
           try {
             return (
-              <box flexDirection="column">
-                <Indicator />
-                <api.ui.Prompt ref={(r) => bind(r, input.ref)} right={<api.ui.Slot name="home_prompt_right" />} />
-              </box>
+              <api.ui.Prompt
+                ref={(r) => bind(r, input.ref)}
+                hint={<Indicator />}
+                right={<api.ui.Slot name="home_prompt_right" />}
+              />
             )
           } catch (error) {
             dbg(`home_prompt render failed: ${error}`)
             return <api.ui.Prompt ref={(r) => bind(r, input.ref)} />
           }
+        },
+        // Fallback: the sidebar is a slot we know renders (the other plugins use
+        // it). If the prompt-slot indicator still doesn't show, this one will.
+        sidebar_content(_ctx: TuiSlotContext, _input: { session_id: string }): JSX.Element {
+          return <Indicator />
         },
       },
     }
