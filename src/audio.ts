@@ -55,8 +55,12 @@ const RATE = 16_000
 const TICK_MS = 80
 const WAV_HEADER = 44
 const TEMP_PREFIX = "opencode-dictate-"
-/** Temp WAVs older than this were left by a run that died; sweep them. */
-const STALE_MS = 10 * 60_000
+/**
+ * Temp WAVs older than this were left by a run that died mid-capture and could
+ * not unlink them. A live utterance is hard-capped at maxMs (60s) plus the
+ * recorder's deadline, so anything past two minutes is certainly garbage.
+ */
+const STALE_MS = 2 * 60_000
 /** Grace period after a capture's own deadline before we force it to stop. */
 const WATCHDOG_SLACK_MS = 5_000
 
