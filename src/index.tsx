@@ -493,7 +493,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     return <text>{cells()}</text>
   }
 
+  let indicatorLogged = false
   function Indicator(): JSX.Element {
+    if (!indicatorLogged) {
+      indicatorLogged = true
+      dbg("indicator render")
+    }
     // Text is only for things the scanner cannot express: a transient notice or
     // a pending question. Recording vs transcribing is the scanner colour.
     const label = () => {
@@ -611,29 +616,42 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           on_submit?: () => void
           ref?: (r: TuiPromptRef | undefined) => void
         }): JSX.Element {
+          dbg("slot session_prompt called")
           sessionId = input.session_id
           refreshAwaiting()
-          return (
-            <box flexDirection="column">
-              <Indicator />
-              <api.ui.Prompt
-                sessionID={input.session_id}
-                visible={input.visible}
-                disabled={input.disabled}
-                onSubmit={input.on_submit}
-                ref={(r) => bind(r, input.ref)}
-                right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
-              />
-            </box>
-          )
+          try {
+            return (
+              <box flexDirection="column">
+                <Indicator />
+                <api.ui.Prompt
+                  sessionID={input.session_id}
+                  visible={input.visible}
+                  disabled={input.disabled}
+                  onSubmit={input.on_submit}
+                  ref={(r) => bind(r, input.ref)}
+                  right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
+                />
+              </box>
+            )
+          } catch (error) {
+            // Never take the prompt down with us; log so the failure is visible.
+            dbg(`session_prompt render failed: ${error}`)
+            return <api.ui.Prompt sessionID={input.session_id} ref={(r) => bind(r, input.ref)} />
+          }
         },
         home_prompt(_ctx: TuiSlotContext, input: { ref?: (r: TuiPromptRef | undefined) => void }): JSX.Element {
-          return (
-            <box flexDirection="column">
-              <Indicator />
-              <api.ui.Prompt ref={(r) => bind(r, input.ref)} right={<api.ui.Slot name="home_prompt_right" />} />
-            </box>
-          )
+          dbg("slot home_prompt called")
+          try {
+            return (
+              <box flexDirection="column">
+                <Indicator />
+                <api.ui.Prompt ref={(r) => bind(r, input.ref)} right={<api.ui.Slot name="home_prompt_right" />} />
+              </box>
+            )
+          } catch (error) {
+            dbg(`home_prompt render failed: ${error}`)
+            return <api.ui.Prompt ref={(r) => bind(r, input.ref)} />
+          }
         },
       },
     }

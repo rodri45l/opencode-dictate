@@ -96,7 +96,20 @@ class Handler(BaseHTTPRequestHandler):
             handle.write(audio)
             path = handle.name
         try:
-            segments, _info = MODEL_INSTANCE.transcribe(path, language=language, beam_size=1, vad_filter=False)
+            # Silero VAD + no_speech_threshold are what stop Whisper from
+            # hallucinating "Thank you." / "Thanks for watching!" on near-silent
+            # or noisy clips. condition_on_previous_text=False prevents one bad
+            # decode from seeding the next.
+            segments, _info = MODEL_INSTANCE.transcribe(
+                path,
+                language=language,
+                beam_size=1,
+                temperature=0.0,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 500},
+                no_speech_threshold=0.6,
+                condition_on_previous_text=False,
+            )
             text = " ".join(segment.text.strip() for segment in segments).strip()
         finally:
             os.unlink(path)

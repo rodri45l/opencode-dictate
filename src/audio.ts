@@ -26,6 +26,8 @@ export interface CaptureConfig {
   silenceMs: number
   maxMs: number
   startTimeoutMs: number
+  /** Voiced milliseconds required before a clip counts as an utterance. */
+  minSpeechMs: number
   inputDevice?: string
 }
 
@@ -133,14 +135,19 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
     const child = spawn(recorder.cmd, recorder.args, { stdio: ["ignore", "ignore", "pipe"] })
     handlers.onPhase("recording")
 
-    const threshold = Number(process.env.VOICE_VAD_THRESHOLD ?? "0.02") || 0.02
+    const threshold = Number(process.env.VOICE_VAD_THRESHOLD ?? "0.025") || 0.025
     let offset = WAV_HEADER
     let spoken = false
+    let voicedMs = 0
+    let loudest = 0
     let quietFor = 0
     let elapsed = 0
     let stopped = false
 
-    const finish = (hadSpeech: boolean) => {
+    // A single loud tick (a cough, a door, headphone bleed) is not speech. Only
+    // report an utterance once enough voiced audio accumulated — otherwise we
+    // hand pure noise to Whisper and it invents a sentence.
+    const finish = () => {
       if (stopped) return
       stopped = true
       clearInterval(timer)
@@ -149,7 +156,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       } catch {
         // already gone
       }
-      resolve({ wavPath, hadSpeech })
+      resolve({ wavPath, hadSpeech: spoken && voicedMs >= config.minSpeechMs })
     }
 
     const timer = setInterval(() => {
@@ -161,23 +168,23 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       handlers.onLevel(level)
       const voicing = peak > threshold
 
-      if (!spoken) {
-        if (voicing) {
-          spoken = true
-          quietFor = 0
-          handlers.onPhase("speech")
-        } else if (elapsed >= config.startTimeoutMs) {
-          return finish(false)
-        }
-      } else if (voicing) {
+      if (voicing) {
+        voicedMs += TICK_MS
+        if (peak > loudest) loudest = peak
         quietFor = 0
-      } else {
+        if (!spoken) {
+          spoken = true
+          handlers.onPhase("speech")
+        }
+      } else if (spoken) {
         if (quietFor === 0) handlers.onPhase("silence")
         quietFor += TICK_MS
-        if (quietFor >= config.silenceMs) return finish(true)
+        if (quietFor >= config.silenceMs) return finish()
+      } else if (elapsed >= config.startTimeoutMs) {
+        return finish()
       }
 
-      if (elapsed >= config.maxMs) finish(spoken)
+      if (elapsed >= config.maxMs) finish()
     }, TICK_MS)
 
     child.on("error", (error) => {
@@ -186,6 +193,6 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       clearInterval(timer)
       reject(error)
     })
-    child.on("exit", () => finish(spoken))
+    child.on("exit", () => finish())
   })
 }

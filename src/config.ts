@@ -33,6 +33,8 @@ export interface VoiceOptions {
   silenceMs?: number
   maxMs?: number
   startTimeoutMs?: number
+  /** Voiced milliseconds required before a clip is treated as speech. */
+  minSpeechMs?: number
   /** Recorder device override (e.g. an avfoundation index). */
   inputDevice?: string
 }
@@ -46,6 +48,7 @@ export interface VoiceConfig {
   silenceMs: number
   maxMs: number
   startTimeoutMs: number
+  minSpeechMs: number
   inputDevice?: string
 }
 
@@ -111,6 +114,7 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
     silenceMs: num(options.silenceMs ?? Number(env("VOICE_SILENCE_MS")), 900),
     maxMs: num(options.maxMs ?? Number(env("VOICE_MAX_MS")), 60_000),
     startTimeoutMs: num(options.startTimeoutMs ?? Number(env("VOICE_START_TIMEOUT_MS")), 4_000),
+    minSpeechMs: num(options.minSpeechMs ?? Number(env("VOICE_MIN_SPEECH_MS")), 300),
     inputDevice: options.inputDevice ?? (env("VOICE_INPUT_DEVICE") || undefined),
   }
 }
