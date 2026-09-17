@@ -13,7 +13,7 @@ import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
 import { adaptGain, clampGain, CLIP_DETECT, loadGain, saveGain } from "./gain"
 import { voiceprint } from "./mfcc"
-import { clippingRatio, decodePcm, periodicity } from "./speech"
+import { clippingRatio, decodePcm, meterLevel, periodicity } from "./speech"
 import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
 
 export interface CaptureHandlers {
@@ -391,7 +391,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
     const timer = setInterval(() => {
       const { peak, next } = drainPeak(wavPath, offset)
       offset = next
-      handlers.onLevel(Math.min(1, peak * 1.8))
+      handlers.onLevel(meterLevel(peak))
 
       const step = vadStep(state, peak, TICK_MS, vadConfig)
       state = step.state

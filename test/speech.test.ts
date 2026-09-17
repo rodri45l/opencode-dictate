@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { clippingRatio, decodePcm, periodicity } from "../src/speech"
+import { clippingRatio, decodePcm, meterLevel, periodicity } from "../src/speech"
 
 const RATE = 16_000
 
@@ -77,5 +77,23 @@ describe("decodePcm", () => {
     expect(samples[0]).toBeCloseTo(1, 3)
     expect(samples[1]).toBeCloseTo(-1, 3)
     expect(samples[2]).toBe(0)
+  })
+})
+
+describe("meterLevel", () => {
+  test("stays still on room tone", () => {
+    expect(meterLevel(0)).toBe(0)
+    expect(meterLevel(0.004)).toBe(0)
+  })
+
+  test("lifts quiet speech into view", () => {
+    // A trimmed mic leaves an ordinary sentence peaking near 0.1, which the old
+    // linear map drew at 0.18 — visually a flat line.
+    expect(meterLevel(0.1)).toBeGreaterThan(0.6)
+  })
+
+  test("clamps at full scale and rises with loudness", () => {
+    expect(meterLevel(1)).toBe(1)
+    expect(meterLevel(0.05)).toBeLessThan(meterLevel(0.2))
   })
 })

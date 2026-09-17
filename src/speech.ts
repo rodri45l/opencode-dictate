@@ -23,6 +23,23 @@ export const ARTIFACT_PERIODICITY = 0.3
 export const CLIPPING_RATIO = 0.001
 const FULL_SCALE = 0.98
 
+/** Peaks this small are room tone, not voice — the meter should stay still. */
+const METER_FLOOR = 0.004
+/**
+ * The wave meter reads captured peaks, which are small in practice: once the
+ * input gain has trimmed a hot microphone, an ordinary sentence peaks near 0.1
+ * and a linear mapping leaves the bars flat. A square root gives loudness the
+ * perceptual curve the eye expects, so quiet speech visibly moves the wave.
+ */
+const METER_BOOST = 2.2
+
+/** Map a raw peak (0..1) to a 0..1 value for the wave indicator. */
+export function meterLevel(peak: number): number {
+  if (!(peak > METER_FLOOR)) return 0
+  const normalized = (peak - METER_FLOOR) / (1 - METER_FLOOR)
+  return Math.min(1, Math.sqrt(normalized) * METER_BOOST)
+}
+
 function bestCorrelation(samples: Float32Array, start: number, frame: number, minLag: number, maxLag: number): number {
   let energy0 = 0
   for (let i = start; i < start + frame; i++) energy0 += samples[i] * samples[i]
