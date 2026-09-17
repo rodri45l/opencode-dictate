@@ -42,6 +42,7 @@ export async function listen(
       options.log?.(`drop silence hallucination (${stats}) transcript="${raw}"`)
       return ""
     }
+    options.log?.(`keep (${stats}) transcript="${raw}"`)
     if (!config.llm) return raw
     return await clean(raw, config.llm, { control: options.control, permission: options.permission })
   } finally {
