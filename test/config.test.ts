@@ -18,6 +18,9 @@ const VOICE_VARS = [
   "VOICE_START_TIMEOUT_MS",
   "VOICE_MIN_SPEECH_MS",
   "VOICE_VAD_THRESHOLD",
+  "VOICE_SPEAKER",
+  "VOICE_SPEAKER_THRESHOLD",
+  "VOICE_SPEAKER_MIN_SAMPLES",
 ]
 
 let saved: Record<string, string | undefined> = {}
@@ -56,6 +59,7 @@ describe("loadConfig", () => {
     expect(config.startTimeoutMs).toBe(4_000)
     expect(config.minSpeechMs).toBe(300)
     expect(config.vadThreshold).toBe(0.03)
+    expect(config.speaker).toEqual({ enabled: false, threshold: 0.6, minSamples: 8 })
   })
 
   test("accepts an STT url string and normalises it", () => {

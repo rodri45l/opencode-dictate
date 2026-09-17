@@ -72,6 +72,7 @@ commands reuse the LLM opencode is already configured with. Configure it in
 | `minSpeechMs` | voiced audio required before a clip is transcribed (default 300) |
 | `vadThreshold` | peak amplitude that counts as voice; raise it in a noisy room (default 0.03) |
 | `debug` | write a debug log (same as `VOICE_DEBUG=1`) |
+| `speaker` | `{ enabled, threshold, minSamples }` — learn your MFCC voiceprint and ignore other speakers |
 | `inputDevice` | recorder device override (e.g. an avfoundation index) |
 
 Environment variables (`VOICE_STT_URL`, `VOICE_LLM_URL`, `VOICE_SILENCE_MS`, …)
@@ -89,6 +90,14 @@ above the noise (below 1.5x `vadThreshold`), and separately discards known
 artifacts. If phantom prompts appear, raise `vadThreshold`; if it stops hearing
 you, lower it. Set `debug: true` and the log records every keep/drop with the
 audio levels so the threshold can be tuned from data.
+
+**Speaker verification (optional):** with `speaker.enabled`, each clip is turned
+into an MFCC voiceprint (no model, no dependencies) and compared by cosine
+similarity to a profile that learns as you talk. It accepts everything until
+`minSamples` utterances are enrolled, then drops clips below `threshold`. The
+profile lives at `~/.local/share/opencode/opencode-dictate/voiceprint.json`;
+delete that file to re-enroll. This is intentionally simple, so treat the
+threshold as a soft gate and tune it from the `debug` log.
 
 **Recorders:** the plugin uses the first of `ffmpeg`, `parecord`, `arecord`,
 `sox` found on `PATH`. `ffmpeg` is the only cross-platform option, so macOS and

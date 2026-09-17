@@ -7,6 +7,7 @@ import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
 import { isSilenceHallucination, isWeakSpeech } from "./hallucination"
+import { enroll, loadProfile, saveProfile, similarity } from "./voiceprint"
 
 export interface ListenOptions {
   control: boolean
@@ -41,6 +42,23 @@ export async function listen(
     if (isSilenceHallucination(raw, captured)) {
       options.log?.(`drop silence hallucination (${stats}) transcript="${raw}"`)
       return ""
+    }
+    // Speaker check: learn the voice first, then reject other speakers. This is a
+    // soft MFCC profile, so it gates only after enough samples and logs its score.
+    if (config.speaker.enabled && captured.print) {
+      const profile = loadProfile()
+      if (profile.count < config.speaker.minSamples) {
+        const next = enroll(profile, captured.print)
+        saveProfile(next)
+        options.log?.(`speaker learning (${next.count}/${config.speaker.minSamples})`)
+      } else {
+        const score = similarity(captured.print, profile)
+        if (score < config.speaker.threshold) {
+          options.log?.(`drop other speaker (similarity=${score.toFixed(2)}) transcript="${raw}"`)
+          return ""
+        }
+        options.log?.(`speaker ok (similarity=${score.toFixed(2)})`)
+      }
     }
     options.log?.(`keep (${stats}) transcript="${raw}"`)
     if (!config.llm) return raw

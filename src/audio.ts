@@ -11,6 +11,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
+import { voiceprint } from "./mfcc"
 import { decodePcm, periodicity } from "./speech"
 import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
 
@@ -27,6 +28,8 @@ export interface CaptureResult {
   loudest: number
   /** Quasi-periodicity of the clip (0..1); speech is periodic, knocks are not. */
   periodicity: number
+  /** MFCC voiceprint, only computed when speaker verification is enabled. */
+  print: Float32Array | null
 }
 
 export interface CaptureConfig {
@@ -37,6 +40,7 @@ export interface CaptureConfig {
   minSpeechMs: number
   /** Peak amplitude above which a tick counts as voice. */
   vadThreshold: number
+  speaker?: { enabled: boolean }
   inputDevice?: string
 }
 
@@ -241,14 +245,24 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       // Whisper (which would otherwise invent a sentence).
       const spoken = hadSpeech(state, vadConfig)
       let strength = 0
+      let print: Float32Array | null = null
       if (spoken) {
         try {
-          strength = periodicity(decodePcm(readFileSync(wavPath), WAV_HEADER), RATE)
+          const samples = decodePcm(readFileSync(wavPath), WAV_HEADER)
+          strength = periodicity(samples, RATE)
+          if (config.speaker?.enabled) print = voiceprint(samples, RATE)
         } catch {
           // unreadable clip — leave strength at 0, the guard will drop it
         }
       }
-      resolve({ wavPath, hadSpeech: spoken, voicedMs: state.voicedMs, loudest: state.loudest, periodicity: strength })
+      resolve({
+        wavPath,
+        hadSpeech: spoken,
+        voicedMs: state.voicedMs,
+        loudest: state.loudest,
+        periodicity: strength,
+        print,
+      })
     }
 
     const timer = setInterval(() => {
