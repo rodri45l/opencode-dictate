@@ -1,0 +1,45 @@
+{
+  "name": "opencode-dictate",
+  "version": "0.1.0",
+  "description": "Hands-free voice conversation mode for opencode: dictate prompts, answer questions/permissions by voice, with an animated status indicator.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rodri45l/opencode-dictate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rodri45l/opencode-dictate/issues"
+  },
+  "homepage": "https://github.com/rodri45l/opencode-dictate#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./tui": {
+      "import": "./dist/index.js"
+    }
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "voice",
+    "dictation",
+    "speech-to-text",
+    "stt",
+    "whisper",
+    "conversation-mode",
+    "hands-free"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.tsx --outfile=dist/index.js --target=bun --format=esm --external solid-js --external '@opentui/solid' --external '@opencode-ai/plugin' --external 'node:*'",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.4.0"
+  }
+}
