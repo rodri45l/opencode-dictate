@@ -40,7 +40,8 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { appendFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { loadConfig } from "./config"
+import { loadConfig, LOCAL_STT_URL, type VoiceOptions } from "./config"
+import { probeStt } from "./detect"
 import { listen } from "./pipeline"
 
 const SCRIPT = join(homedir(), ".local", "bin", "dictate")
@@ -94,9 +95,22 @@ const VOICE_SYSTEM = [
   "- Keep replies short and speakable (one to three sentences) unless the user asks for detail.",
 ].join("\n")
 
-const tui: TuiPlugin = async (api: TuiPluginApi) => {
+const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) => {
   dbg("tui() start")
-  const voiceConfig = loadConfig()
+  const voiceConfig = loadConfig(pluginOptions ?? {})
+  const [builtin, setBuiltin] = createSignal<boolean>(
+    voiceConfig.backend === "builtin" || (voiceConfig.backend === "auto" && voiceConfig.stt !== null),
+  )
+  // Auto-detect a local STT server so no config is needed when one is running.
+  if (voiceConfig.backend === "auto" && !voiceConfig.stt) {
+    void (async () => {
+      if (await probeStt(LOCAL_STT_URL)) {
+        voiceConfig.stt = { url: LOCAL_STT_URL, key: "", model: "whisper-1" }
+        setBuiltin(true)
+        dbg(`auto-detected local STT at ${LOCAL_STT_URL}`)
+      }
+    })()
+  }
   const [status, setStatus] = createSignal<Status>("idle")
   const [convOn, setConvOn] = createSignal(false)
   const [awaiting, setAwaiting] = createSignal("")
@@ -134,7 +148,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi) => {
     // Preferred: builtin cross-platform pipeline (capture + VAD + transcribe +
     // cleanup), used when an STT endpoint is configured. Falls back to the
     // external `dictate` command otherwise.
-    if (voiceConfig.stt) {
+    if (builtin() && voiceConfig.stt) {
       return (async () => {
         setStatus("recording")
         try {

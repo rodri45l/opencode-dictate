@@ -10,6 +10,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync, openSync, readSync, closeSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { ensureAudioEnvironment } from "./detect"
 
 export interface CaptureHandlers {
   onPhase(name: "speech" | "silence" | "recording" | "transcribing"): void
@@ -50,7 +51,11 @@ function which(bin: string): boolean {
  * (endpointing), or once the start timeout elapses with no speech.
  * Emits PHASE + level via handlers so the UI can react live.
  */
-export function capture(config: { silenceMs: number; maxMs: number; startTimeoutMs: number }, handlers: CaptureHandlers): Promise<CaptureResult> {
+export function capture(
+  config: { silenceMs: number; maxMs: number; startTimeoutMs: number; inputDevice?: string },
+  handlers: CaptureHandlers,
+): Promise<CaptureResult> {
+  ensureAudioEnvironment()
   const wavPath = join(tmpdir(), `opencode-dictate-${Date.now()}.wav`)
   const silenceSec = (config.silenceMs / 1000).toFixed(2)
   const maxSec = (config.maxMs / 1000).toFixed(2)
@@ -64,7 +69,7 @@ export function capture(config: { silenceMs: number; maxMs: number; startTimeout
     "-hide_banner",
     "-loglevel",
     "info",
-    ...ffmpegInput(process.env.VOICE_INPUT_DEVICE),
+    ...ffmpegInput(config.inputDevice),
     "-ac",
     "1",
     "-ar",

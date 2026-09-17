@@ -45,25 +45,42 @@ or add it to `~/.config/opencode/tui.json`:
 
 ## Configuration
 
-The builtin pipeline is enabled by pointing the plugin at a **speech-to-text
-endpoint** (any OpenAI-compatible `/audio/transcriptions`, local or cloud) and,
-optionally, an **LLM** for cleanup + voice commands. Set these in the
-environment opencode runs in:
+You only need to point the plugin at **speech-to-text** — cleanup and voice
+commands reuse the LLM opencode is already configured with. Configure it in
+`tui.json` via plugin options:
 
-| Variable | Meaning |
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    ["opencode-dictate", { "stt": "http://127.0.0.1:8080/v1" }]
+  ]
+}
+```
+
+```jsonc
+// or the object form
+["opencode-dictate", { "stt": { "url": "https://api.openai.com/v1", "key": "sk-…", "model": "whisper-1" } }]
+```
+
+| Option | Meaning |
 |---|---|
-| `VOICE_STT_URL` | e.g. `http://127.0.0.1:8080/v1` (local whisper server) or `https://api.openai.com/v1` |
-| `VOICE_STT_KEY` | API key (omit for a local server) |
-| `VOICE_STT_MODEL` | default `whisper-1` |
-| `VOICE_LLM_URL` | optional OpenAI-compatible base for cleanup + `[[STOP]]`-style commands |
-| `VOICE_LLM_KEY`, `VOICE_LLM_MODEL` | credentials/model for the above |
-| `VOICE_SILENCE_MS` | silence that ends an utterance (default 900) |
-| `VOICE_MAX_MS` | max utterance length (default 60000) |
-| `VOICE_INPUT_DEVICE` | recorder device override (e.g. an avfoundation index) |
+| `stt` | `"http://…/v1"` or `{ url, key, model }` — any OpenAI-compatible `/audio/transcriptions` |
+| `llm` | *optional* override; default is the LLM opencode uses (`small_model`, else `model`) |
+| `backend` | `"builtin"` \| `"command"` \| `"auto"` (default `auto`) |
+| `silenceMs` / `maxMs` | utterance endpointing (defaults 900 / 60000) |
+| `inputDevice` | recorder device override (e.g. an avfoundation index) |
 
-Audio is captured with **ffmpeg** (cross-platform), which must be on `PATH`.
-If no `VOICE_STT_URL` is set, the plugin falls back to an external `dictate`
-command on `PATH` (e.g. a local GPU Whisper build).
+Environment variables (`VOICE_STT_URL`, `VOICE_LLM_URL`, `VOICE_SILENCE_MS`, …)
+still work and are overridden by plugin options.
+
+**Auto-detection:** if no STT is configured the plugin probes
+`http://127.0.0.1:8080/v1` and uses it when a local server answers; on Linux it
+also sets `PULSE_SERVER` for WSLg automatically. Audio is captured with
+**ffmpeg** (cross-platform), which must be on `PATH`. With `backend: "command"`
+the plugin instead runs an external `dictate` command (e.g. a local GPU build).
+
+See `servers/faster-whisper/` for a dependency-free local STT server.
 
 ## Architecture
 

@@ -1,5 +1,7 @@
-// Configuration for the voice pipeline, resolved from the environment.
-// Everything is optional; a sensible default is chosen where possible.
+// Configuration for the voice pipeline.
+//
+// Precedence: plugin options (from tui.json) > environment > auto/default.
+// Everything is optional; sensible defaults are chosen where possible.
 
 import { resolveOpencodeLlm } from "./llm"
 
@@ -19,20 +21,32 @@ export interface LlmConfig {
   provider: string
 }
 
-export interface VoiceConfig {
-  /** Hard override for how audio is recorded (shell-ish argv template). */
-  recorder: string | null
-  /** Speech-to-text. Null disables the builtin backend. */
-  stt: SttConfig | null
-  /** Optional cleanup LLM. Null = use the raw transcript (no voice commands). */
-  llm: LlmConfig | null
-  /** Milliseconds of silence that ends an utterance. */
-  silenceMs: number
-  /** Hard cap on a single utterance. */
-  maxMs: number
-  /** How long to wait for speech to start before giving up. */
-  startTimeoutMs: number
+export interface VoiceOptions {
+  /** "http://…/v1" or { url, key, model } */
+  stt?: string | { url?: string; key?: string; model?: string }
+  /** Optional override; by default the LLM opencode is configured with is used. */
+  llm?: string | { url?: string; key?: string; model?: string }
+  /** Force the builtin pipeline or the external `dictate` command. */
+  backend?: "builtin" | "command"
+  silenceMs?: number
+  maxMs?: number
+  startTimeoutMs?: number
+  /** Recorder device override (e.g. an avfoundation index). */
+  inputDevice?: string
 }
+
+export interface VoiceConfig {
+  stt: SttConfig | null
+  llm: LlmConfig | null
+  backend: "builtin" | "command" | "auto"
+  silenceMs: number
+  maxMs: number
+  startTimeoutMs: number
+  inputDevice?: string
+}
+
+/** Default local STT server (the reference faster-whisper server). */
+export const LOCAL_STT_URL = "http://127.0.0.1:8080/v1"
 
 function env(name: string): string {
   return (
@@ -40,9 +54,8 @@ function env(name: string): string {
   ).trim()
 }
 
-function num(name: string, fallback: number): number {
-  const value = Number(env(name))
-  return Number.isFinite(value) && value > 0 ? value : fallback
+function num(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && value > 0 ? value : fallback
 }
 
 /** Trim a trailing slash so we can append paths consistently. */
@@ -50,29 +63,49 @@ export function base(url: string): string {
   return url.replace(/\/+$/, "")
 }
 
-export function loadConfig(): VoiceConfig {
-  const sttUrl = env("VOICE_STT_URL")
-  const llmUrl = env("VOICE_LLM_URL")
+function sttFrom(value: VoiceOptions["stt"]): SttConfig | null {
+  if (!value) return null
+  if (typeof value === "string") return { url: base(value), key: "", model: "whisper-1" }
+  if (!value.url) return null
+  return { url: base(value.url), key: value.key ?? "", model: value.model ?? "whisper-1" }
+}
 
-  // Cleanup LLM: explicit env wins, else reuse the LLM opencode already has,
-  // so users only need to configure speech-to-text.
-  const llm: LlmConfig | null = llmUrl
-    ? {
-        url: base(llmUrl),
-        key: env("VOICE_LLM_KEY"),
-        model: env("VOICE_LLM_MODEL") || "gpt-4o-mini",
-        provider: "custom",
-      }
-    : resolveOpencodeLlm()
+function llmFrom(value: VoiceOptions["llm"]): LlmConfig | null {
+  if (!value) return null
+  if (typeof value === "string") return { url: base(value), key: "", model: "gpt-4o-mini", provider: "custom" }
+  if (!value.url) return null
+  return { url: base(value.url), key: value.key ?? "", model: value.model ?? "gpt-4o-mini", provider: "custom" }
+}
+
+export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
+  const envStt = env("VOICE_STT_URL")
+  const envLlm = env("VOICE_LLM_URL")
+
+  // STT: options > env > null (the plugin probes the local server, then falls
+  // back to the external command).
+  const stt =
+    sttFrom(options.stt) ??
+    (envStt ? { url: base(envStt), key: env("VOICE_STT_KEY"), model: env("VOICE_STT_MODEL") || "whisper-1" } : null)
+
+  // LLM: options > env > whatever opencode itself is configured with.
+  const llm =
+    llmFrom(options.llm) ??
+    (envLlm
+      ? {
+          url: base(envLlm),
+          key: env("VOICE_LLM_KEY"),
+          model: env("VOICE_LLM_MODEL") || "gpt-4o-mini",
+          provider: "custom",
+        }
+      : resolveOpencodeLlm())
 
   return {
-    recorder: env("VOICE_RECORDER") || null,
-    stt: sttUrl
-      ? { url: base(sttUrl), key: env("VOICE_STT_KEY"), model: env("VOICE_STT_MODEL") || "whisper-1" }
-      : null,
+    stt,
     llm,
-    silenceMs: num("VOICE_SILENCE_MS", 900),
-    maxMs: num("VOICE_MAX_MS", 60_000),
-    startTimeoutMs: num("VOICE_START_TIMEOUT_MS", 4_000),
+    backend: options.backend ?? ((env("VOICE_BACKEND") as VoiceConfig["backend"]) || "auto"),
+    silenceMs: num(options.silenceMs ?? Number(env("VOICE_SILENCE_MS")), 900),
+    maxMs: num(options.maxMs ?? Number(env("VOICE_MAX_MS")), 60_000),
+    startTimeoutMs: num(options.startTimeoutMs ?? Number(env("VOICE_START_TIMEOUT_MS")), 4_000),
+    inputDevice: options.inputDevice ?? (env("VOICE_INPUT_DEVICE") || undefined),
   }
 }
