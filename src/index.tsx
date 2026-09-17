@@ -624,19 +624,21 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           refreshAwaiting()
           try {
             return (
-              <api.ui.Prompt
-                sessionID={input.session_id}
-                visible={input.visible}
-                disabled={input.disabled}
-                onSubmit={input.on_submit}
-                ref={(r) => bind(r, input.ref)}
-                right={
-                  <box flexDirection="row" gap={2}>
-                    <Indicator compact />
-                    <api.ui.Slot name="session_prompt_right" session_id={input.session_id} />
-                  </box>
-                }
-              />
+              <box flexDirection="column" width="100%">
+                {/* Static, signal-free marker: if this shows, the slot renders. */}
+                <box flexDirection="row" width="100%" justifyContent="center">
+                  <text fg="#FF5555">DICTATE-ABOVE</text>
+                  <Indicator compact />
+                </box>
+                <api.ui.Prompt
+                  sessionID={input.session_id}
+                  visible={input.visible}
+                  disabled={input.disabled}
+                  onSubmit={input.on_submit}
+                  ref={(r) => bind(r, input.ref)}
+                  right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
+                />
+              </box>
             )
           } catch (error) {
             // Never take the prompt down with us; log so the failure is visible.
