@@ -14,8 +14,12 @@ const FRAME_MS = 32
 export const MIN_PERIODICITY = 0.15
 /** Below this, a known silence artifact is considered invented. */
 export const ARTIFACT_PERIODICITY = 0.3
-/** Fraction of samples pinned at full scale that means the mic was knocked. */
-export const CLIPPING_RATIO = 0.02
+/**
+ * Fraction of samples pinned at full scale that means the mic was knocked.
+ * Measured on real audio: speech transients clip ~0.0000-0.0004, a mic tap
+ * saturates ~0.012 — about 30x apart, so 0.2% sits safely between them.
+ */
+export const CLIPPING_RATIO = 0.002
 const FULL_SCALE = 0.98
 
 function bestCorrelation(samples: Float32Array, start: number, frame: number, minLag: number, maxLag: number): number {

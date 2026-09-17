@@ -77,8 +77,14 @@ for (const label of labels()) {
     const score = stats.print ? similarity(stats.print, profile) : null
 
     // The audio-level guards (a pop never reaches the transcript step).
-    const weak = isWeakSpeech(stats, THRESHOLD * 1.5)
-    const hallucination = isSilenceHallucination("Thank you.", stats)
+    const audio = {
+      voicedMs: stats.voicedMs,
+      loudest: stats.loudest,
+      periodicity: stats.pitch,
+      clipped: stats.clip,
+    }
+    const weak = isWeakSpeech(audio, THRESHOLD * 1.5)
+    const hallucination = isSilenceHallucination("Thank you.", audio)
     const verdict = weak ? "DROP weak/clipped" : hallucination ? "DROP artifact" : "audio ok"
 
     const similarityText = score === null ? "  n/a" : score.toFixed(2)

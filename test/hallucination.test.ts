@@ -83,8 +83,13 @@ describe("isWeakSpeech", () => {
   })
 
   test("drops a saturated mic knock even though it is loud and periodic", () => {
-    // The observed pop: peak 1.0, pitch 0.60, yet the input was clipping.
-    expect(isWeakSpeech({ voicedMs: 1600, loudest: 1, periodicity: 0.6, clipped: 0.4 }, 0.05)).toBe(true)
+    // The observed pop: peak 1.0, pitch 0.60, clipped 1.2%.
+    expect(isWeakSpeech({ voicedMs: 1600, loudest: 1, periodicity: 0.6, clipped: 0.012 }, 0.05)).toBe(true)
+  })
+
+  test("keeps real speech that only clips on transients", () => {
+    // Measured on real recordings: speech never exceeded 0.04% clipping.
+    expect(isWeakSpeech({ voicedMs: 4000, loudest: 1, periodicity: 0.5, clipped: 0.0004 }, 0.05)).toBe(false)
   })
 
   test("keeps clearly spoken audio", () => {
