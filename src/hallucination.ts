@@ -82,6 +82,30 @@ export function isSilenceHallucination(text: string, stats: AudioStats): boolean
 }
 
 /**
+ * Nobody talks faster than this. Whisper turns a short noise burst into a whole
+ * sentence, and the giveaway is that the sentence could not have been spoken in
+ * the time we actually recorded voice. Measured: real speech runs 2.4-6.5
+ * words/second, while an invented "I'm going to go to the next episode." from
+ * 560ms of noise implies 16.
+ */
+export const MAX_WORDS_PER_SECOND = 8
+/** Below this many words the estimate is too noisy to judge. */
+const MIN_WORDS_FOR_RATE = 4
+
+/** Words in a transcript, counted after normalisation. */
+export function wordCount(text: string): number {
+  return normalizeTranscript(text).split(" ").filter(Boolean).length
+}
+
+/** True when the transcript is longer than the recorded speech could contain. */
+export function isImplausibleRate(text: string, voicedMs: number): boolean {
+  const words = wordCount(text)
+  if (words < MIN_WORDS_FOR_RATE) return false
+  const seconds = voicedMs / 1000
+  return seconds <= 0 || words / seconds > MAX_WORDS_PER_SECOND
+}
+
+/**
  * A transcript is invented if the microphone never clearly heard speech. This
  * catches hallucinations the phrase list misses, without needing to know what
  * the model decided to say.

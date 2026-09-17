@@ -6,7 +6,7 @@ import { type VoiceConfig } from "./config"
 import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
-import { isArtifact, isSilenceHallucination, isWeakSpeech } from "./hallucination"
+import { isArtifact, isImplausibleRate, isSilenceHallucination, isWeakSpeech } from "./hallucination"
 import { enroll, loadProfile, saveProfile, similarity } from "./voiceprint"
 
 export interface ListenOptions {
@@ -48,6 +48,12 @@ export async function listen(
     // Loud enough to be speech, but a known silence artifact.
     if (isSilenceHallucination(raw, captured)) {
       options.log?.(`drop silence hallucination (${stats}) transcript="${raw}"`)
+      return ""
+    }
+    // A whole sentence cannot fit in the voice we recorded: the model invented
+    // it. This catches sign-off phrases the artifact list has never seen.
+    if (isImplausibleRate(raw, captured.voicedMs)) {
+      options.log?.(`drop impossible speech rate (${stats}) transcript="${raw}"`)
       return ""
     }
     // Speaker check: learn the voice first, then reject other speakers. This is a

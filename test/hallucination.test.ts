@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   isArtifact,
+  isImplausibleRate,
   isSilenceHallucination,
   isWeakSpeech,
   normalizeTranscript,
@@ -105,5 +106,30 @@ describe("isWeakSpeech", () => {
   test("uses the threshold as an exclusive bound", () => {
     expect(isWeakSpeech({ voicedMs: 900, loudest: 0.05, periodicity: 0.6, clipped: 0 }, 0.05)).toBe(false)
     expect(isWeakSpeech({ voicedMs: 900, loudest: 0.0499, periodicity: 0.6, clipped: 0 }, 0.05)).toBe(true)
+  })
+})
+
+describe("isImplausibleRate", () => {
+  test("drops the sentence invented from 560ms of noise", () => {
+    // The phantom that reached the prompt: 9 words from 0.56s (16 words/s).
+    expect(isImplausibleRate("I'm going to go to the next episode.", 560)).toBe(true)
+  })
+
+  test("keeps real speech, including the fastest measured", () => {
+    // 14 words in 2.16s = 6.5 words/second — fast, but genuinely said.
+    expect(
+      isImplausibleRate("You can search somewhere in this computer, because we recorded a few sentences before.", 2160),
+    ).toBe(false)
+    expect(isImplausibleRate("Okay, perfect. Thank you.", 1040)).toBe(false)
+    expect(isImplausibleRate("Okay, done. I have restarted twice.", 2160)).toBe(false)
+  })
+
+  test("ignores transcripts too short to judge", () => {
+    expect(isImplausibleRate("Okay.", 320)).toBe(false)
+    expect(isImplausibleRate("Thank you.", 400)).toBe(false)
+  })
+
+  test("drops a sentence with no voiced audio at all", () => {
+    expect(isImplausibleRate("Thanks for watching the whole video everyone", 0)).toBe(true)
   })
 })
