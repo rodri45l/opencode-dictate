@@ -24,8 +24,13 @@ export async function listen(
   if (!config.stt) throw new Error("no speech-to-text configured — set VOICE_STT_URL")
 
   const captured = await capture(config, handlers)
-  if (!captured.hadSpeech) return ""
   const { wavPath } = captured
+  // A silent clip is discarded here, before the try/finally below, so it must
+  // be unlinked explicitly or every quiet moment leaves a file in /tmp.
+  if (!captured.hadSpeech) {
+    rmSync(wavPath, { force: true })
+    return ""
+  }
   handlers.onPhase("transcribing")
 
   try {

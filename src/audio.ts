@@ -6,8 +6,8 @@
 // energy VAD decides where the utterance ends. Recording lives in *our* event
 // loop, so one bad recorder can never spin the TUI.
 
-import { spawn, spawnSync } from "node:child_process"
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs"
+import { spawn, spawnSync, type ChildProcess } from "node:child_process"
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
@@ -54,6 +54,74 @@ export interface CaptureConfig {
 const RATE = 16_000
 const TICK_MS = 80
 const WAV_HEADER = 44
+const TEMP_PREFIX = "opencode-dictate-"
+/** Temp WAVs older than this were left by a run that died; sweep them. */
+const STALE_MS = 10 * 60_000
+/** Grace period after a capture's own deadline before we force it to stop. */
+const WATCHDOG_SLACK_MS = 5_000
+
+// Every recorder we start is tracked here, so a capture can never be abandoned
+// holding the microphone: leaving conversation mode or the TUI dying outright
+// kills whatever is still running.
+const live = new Set<ChildProcess>()
+let reaperArmed = false
+
+function armReaper(): void {
+  if (reaperArmed) return
+  reaperArmed = true
+  process.on("exit", () => {
+    for (const child of live) {
+      try {
+        child.kill("SIGKILL")
+      } catch {
+        // already gone
+      }
+    }
+    live.clear()
+  })
+}
+
+/** SIGTERM now, SIGKILL shortly after — recorders must never survive a stop. */
+function killRecorder(child: ChildProcess): void {
+  if (!live.delete(child)) return
+  try {
+    child.kill("SIGTERM")
+  } catch {
+    // already gone
+  }
+  const hard = setTimeout(() => {
+    try {
+      child.kill("SIGKILL")
+    } catch {
+      // reaped between the two signals
+    }
+  }, 400)
+  hard.unref?.()
+}
+
+/** Stop every in-flight recorder (used when conversation mode is turned off). */
+export function stopActiveRecorders(): void {
+  for (const child of [...live]) killRecorder(child)
+}
+
+/** Delete temp WAVs an earlier crashed run never cleaned up. */
+function sweepStaleTemps(): void {
+  const dir = tmpdir()
+  const cutoff = Date.now() - STALE_MS
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!name.startsWith(TEMP_PREFIX) || !name.endsWith(".wav")) continue
+      const path = join(dir, name)
+      try {
+        if (statSync(path).mtimeMs < cutoff) rmSync(path, { force: true })
+      } catch {
+        // vanished under us
+      }
+    }
+  } catch {
+    // unreadable tmpdir — nothing to sweep
+  }
+}
 
 export function which(bin: string): boolean {
   // path.delimiter, not ":" — Windows PATH entries contain a drive colon, and
@@ -224,7 +292,9 @@ function drainPeak(path: string, offset: number): { peak: number; next: number }
 
 export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promise<CaptureResult> {
   ensureAudioEnvironment()
-  const wavPath = join(tmpdir(), `opencode-dictate-${Date.now()}.wav`)
+  armReaper()
+  sweepStaleTemps()
+  const wavPath = join(tmpdir(), `${TEMP_PREFIX}${Date.now()}.wav`)
   // A fixed gain wins; otherwise trim automatically so a hot mic never clips.
   const fixed = typeof config.inputGain === "number" ? clampGain(config.inputGain) : undefined
   const gain = fixed ?? (config.autoGain === false ? 1 : loadGain())
@@ -239,6 +309,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
 
   return new Promise<CaptureResult>((resolve, reject) => {
     const child = spawn(recorder.cmd, recorder.args, { stdio: ["ignore", "ignore", "pipe"] })
+    live.add(child)
     handlers.onPhase("recording")
 
     const vadConfig: VadConfig = {
@@ -257,11 +328,8 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       if (stopped) return
       stopped = true
       clearInterval(timer)
-      try {
-        child.kill("SIGTERM")
-      } catch {
-        // already gone
-      }
+      clearTimeout(watchdog)
+      killRecorder(child)
       // A single loud tick (a cough, a door, headphone bleed) is not speech:
       // hadSpeech also requires enough voiced audio, so noise never reaches
       // Whisper (which would otherwise invent a sentence).
@@ -306,10 +374,17 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       if (state.done) finish()
     }, TICK_MS)
 
+    // Belt and braces: if the tick loop ever stops making progress, stop anyway
+    // rather than holding the microphone and writing an ever-growing file.
+    const watchdog = setTimeout(finish, config.maxMs + WATCHDOG_SLACK_MS)
+    watchdog.unref?.()
+
     child.on("error", (error) => {
       if (stopped) return
       stopped = true
       clearInterval(timer)
+      clearTimeout(watchdog)
+      live.delete(child)
       reject(error)
     })
     child.on("exit", () => finish())

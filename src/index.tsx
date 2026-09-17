@@ -40,6 +40,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { appendFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { stopActiveRecorders } from "./audio"
 import { loadConfig, LOCAL_STT_URL, type VoiceOptions } from "./config"
 import { probeStt } from "./detect"
 import { listen } from "./pipeline"
@@ -407,6 +408,9 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       void voiceLoop()
     } else {
       setAwaiting("")
+      // The loop exits on its own after the in-flight utterance, but stop the
+      // recorder now so no process is left holding the microphone.
+      stopActiveRecorders()
       try {
         activeChild?.kill()
       } catch {
