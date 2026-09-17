@@ -69,6 +69,9 @@ commands reuse the LLM opencode is already configured with. Configure it in
 | `llm` | *optional* override; default is the LLM opencode uses (`small_model`, else `model`) |
 | `backend` | `"builtin"` \| `"command"` \| `"auto"` (default `auto`) |
 | `silenceMs` / `maxMs` | utterance endpointing (defaults 900 / 60000) |
+| `minSpeechMs` | voiced audio required before a clip is transcribed (default 300) |
+| `vadThreshold` | peak amplitude that counts as voice; raise it in a noisy room (default 0.03) |
+| `debug` | write a debug log (same as `VOICE_DEBUG=1`) |
 | `inputDevice` | recorder device override (e.g. an avfoundation index) |
 
 Environment variables (`VOICE_STT_URL`, `VOICE_LLM_URL`, `VOICE_SILENCE_MS`, …)
@@ -77,6 +80,15 @@ still work and are overridden by plugin options.
 **Auto-detection:** if no STT is configured the plugin probes
 `http://127.0.0.1:8080/v1` and uses it when a local server answers; on Linux it
 also sets `PULSE_SERVER` for WSLg automatically.
+
+**Noise and hallucinations:** Whisper-family models invent phrases ("Thank
+you.", "To be continued…") when handed silence or room noise, and cloud
+endpoints don't expose the server-side VAD a local server does. The plugin
+therefore discards a transcript when the clip's loudest peak never clearly rose
+above the noise (below 1.5x `vadThreshold`), and separately discards known
+artifacts. If phantom prompts appear, raise `vadThreshold`; if it stops hearing
+you, lower it. Set `debug: true` and the log records every keep/drop with the
+audio levels so the threshold can be tuned from data.
 
 **Recorders:** the plugin uses the first of `ffmpeg`, `parecord`, `arecord`,
 `sox` found on `PATH`. `ffmpeg` is the only cross-platform option, so macOS and
