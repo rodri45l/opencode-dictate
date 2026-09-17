@@ -4,11 +4,15 @@
 // those outputs, but only when the captured audio was too weak to be that phrase
 // — so a genuine "thank you" still gets through.
 
+import { ARTIFACT_PERIODICITY, MIN_PERIODICITY } from "./speech"
+
 export interface AudioStats {
   /** Milliseconds of voiced audio in the clip. */
   voicedMs: number
   /** Loudest peak amplitude (0..1) in the clip. */
   loudest: number
+  /** Quasi-periodicity (0..1); speech is periodic, a mic knock is not. */
+  periodicity: number
 }
 
 /** Peak below this means nothing clearly speech-like was captured. */
@@ -66,7 +70,9 @@ export function normalizeTranscript(text: string): string {
 export function isSilenceHallucination(text: string, stats: AudioStats): boolean {
   const normalized = normalizeTranscript(text)
   if (!SILENCE_HALLUCINATIONS.has(normalized)) return false
-  return stats.loudest < WEAK_PEAK || stats.voicedMs < WEAK_VOICED_MS
+  // A finger tap on the mic is loud, so loudness alone would keep it; it is not
+  // periodic, which is what actually separates it from someone saying the phrase.
+  return stats.loudest < WEAK_PEAK || stats.voicedMs < WEAK_VOICED_MS || stats.periodicity < ARTIFACT_PERIODICITY
 }
 
 /**
@@ -75,5 +81,5 @@ export function isSilenceHallucination(text: string, stats: AudioStats): boolean
  * the model decided to say.
  */
 export function isWeakSpeech(stats: AudioStats, minPeak: number): boolean {
-  return stats.loudest < minPeak
+  return stats.loudest < minPeak || stats.periodicity < MIN_PERIODICITY
 }

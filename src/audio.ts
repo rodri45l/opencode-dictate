@@ -7,10 +7,11 @@
 // loop, so one bad recorder can never spin the TUI.
 
 import { spawn, spawnSync } from "node:child_process"
-import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs"
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
+import { decodePcm, periodicity } from "./speech"
 import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
 
 export interface CaptureHandlers {
@@ -24,6 +25,8 @@ export interface CaptureResult {
   /** Stats kept for the hallucination guard downstream. */
   voicedMs: number
   loudest: number
+  /** Quasi-periodicity of the clip (0..1); speech is periodic, knocks are not. */
+  periodicity: number
 }
 
 export interface CaptureConfig {
@@ -236,7 +239,16 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       // A single loud tick (a cough, a door, headphone bleed) is not speech:
       // hadSpeech also requires enough voiced audio, so noise never reaches
       // Whisper (which would otherwise invent a sentence).
-      resolve({ wavPath, hadSpeech: hadSpeech(state, vadConfig), voicedMs: state.voicedMs, loudest: state.loudest })
+      const spoken = hadSpeech(state, vadConfig)
+      let strength = 0
+      if (spoken) {
+        try {
+          strength = periodicity(decodePcm(readFileSync(wavPath), WAV_HEADER), RATE)
+        } catch {
+          // unreadable clip — leave strength at 0, the guard will drop it
+        }
+      }
+      resolve({ wavPath, hadSpeech: spoken, voicedMs: state.voicedMs, loudest: state.loudest, periodicity: strength })
     }
 
     const timer = setInterval(() => {

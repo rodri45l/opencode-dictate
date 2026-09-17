@@ -30,7 +30,7 @@ export async function listen(
   try {
     const raw = await transcribe(wavPath, config.stt)
     if (!raw) return ""
-    const stats = `voiced=${captured.voicedMs}ms peak=${captured.loudest.toFixed(3)}`
+    const stats = `voiced=${captured.voicedMs}ms peak=${captured.loudest.toFixed(3)} pitch=${captured.periodicity.toFixed(2)}`
     // The mic never clearly heard speech, so whatever the model said is made up.
     // This catches hallucinations the phrase list cannot know about.
     if (isWeakSpeech(captured, config.vadThreshold * 1.5)) {
