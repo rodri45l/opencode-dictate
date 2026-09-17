@@ -512,29 +512,27 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       if (alertColor()) return alertColor()
       return status() === "speaking" ? RED : status() === "transcribing" ? AMBER : IDLE
     }
+    // The row is rendered unconditionally, with a blank spacer when idle. The
+    // host lays the prompt slot out at the prompt's height and does not grow it
+    // when a row appears later, so a row inserted on toggle was being dropped.
+    // Reserving it up front keeps the scanner on screen.
     return (
-      <Show when={label() !== "" || convOn()}>
-        <box flexDirection="column" marginBottom={1}>
-          {/* Centred over the prompt rather than indented with it. */}
-          <box flexDirection="row" gap={2} justifyContent="center">
-            <Show when={convOn()}>
-              <Show
-                when={indicator() === "waves"}
-                fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
-              >
-                <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
-              </Show>
+      <box flexDirection="column" marginBottom={1}>
+        {/* Centred over the prompt rather than indented with it. */}
+        <box flexDirection="row" gap={2} justifyContent="center">
+          <Show when={convOn()} fallback={<text>{" "}</text>}>
+            <Show
+              when={indicator() === "waves"}
+              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
+            >
+              <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
             </Show>
-            <Show when={label() !== ""}>
-              <text fg={color()}>{label()}</text>
-            </Show>
-            {/* Plain text alongside the scanner: proves the line is on screen. */}
-            <Show when={convOn()}>
-              <text fg={scannerColor()}>{status() === "idle" ? "listening" : status()}</text>
-            </Show>
-          </box>
+          </Show>
+          <Show when={label() !== ""}>
+            <text fg={color()}>{label()}</text>
+          </Show>
         </box>
-      </Show>
+      </box>
     )
   }
 
@@ -624,19 +622,18 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           sessionId = input.session_id
           refreshAwaiting()
           try {
-            // The indicator rides inside the Prompt (its `hint`), not as a sibling
-            // row: the host lays the prompt slot out at prompt height, so an extra
-            // row above it gets clipped.
             return (
-              <api.ui.Prompt
-                sessionID={input.session_id}
-                visible={input.visible}
-                disabled={input.disabled}
-                onSubmit={input.on_submit}
-                ref={(r) => bind(r, input.ref)}
-                hint={<Indicator />}
-                right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
-              />
+              <box flexDirection="column">
+                <Indicator />
+                <api.ui.Prompt
+                  sessionID={input.session_id}
+                  visible={input.visible}
+                  disabled={input.disabled}
+                  onSubmit={input.on_submit}
+                  ref={(r) => bind(r, input.ref)}
+                  right={<api.ui.Slot name="session_prompt_right" session_id={input.session_id} />}
+                />
+              </box>
             )
           } catch (error) {
             // Never take the prompt down with us; log so the failure is visible.
@@ -648,11 +645,10 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           dbg("slot home_prompt called")
           try {
             return (
-              <api.ui.Prompt
-                ref={(r) => bind(r, input.ref)}
-                hint={<Indicator />}
-                right={<api.ui.Slot name="home_prompt_right" />}
-              />
+              <box flexDirection="column">
+                <Indicator />
+                <api.ui.Prompt ref={(r) => bind(r, input.ref)} right={<api.ui.Slot name="home_prompt_right" />} />
+              </box>
             )
           } catch (error) {
             dbg(`home_prompt render failed: ${error}`)
