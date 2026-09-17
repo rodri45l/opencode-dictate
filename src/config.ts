@@ -39,6 +39,10 @@ export interface VoiceOptions {
   vadThreshold?: number
   /** Write a debug log (same as VOICE_DEBUG=1). */
   debug?: boolean
+  /** Fixed input gain 0..1; disables automatic gain (default auto). */
+  inputGain?: number
+  /** Adapt input gain from clipping/level automatically (default true). */
+  autoGain?: boolean
   /** Reject speech that doesn't sound like the enrolled speaker. */
   speaker?: {
     enabled?: boolean
@@ -65,6 +69,8 @@ export interface VoiceConfig {
   minSpeechMs: number
   vadThreshold: number
   speaker: { enabled: boolean; threshold: number; artifactThreshold: number; minSamples: number }
+  inputGain?: number
+  autoGain: boolean
   inputDevice?: string
 }
 
@@ -132,6 +138,8 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
     startTimeoutMs: num(options.startTimeoutMs ?? Number(env("VOICE_START_TIMEOUT_MS")), 4_000),
     minSpeechMs: num(options.minSpeechMs ?? Number(env("VOICE_MIN_SPEECH_MS")), 300),
     vadThreshold: num(options.vadThreshold ?? Number(env("VOICE_VAD_THRESHOLD")), 0.03),
+    inputGain: typeof options.inputGain === "number" ? options.inputGain : undefined,
+    autoGain: options.autoGain ?? !/^(0|false|off)$/i.test(env("VOICE_AUTO_GAIN")),
     speaker: {
       enabled: options.speaker?.enabled ?? /^(1|true|on)$/i.test(env("VOICE_SPEAKER")),
       threshold: num(options.speaker?.threshold ?? Number(env("VOICE_SPEAKER_THRESHOLD")), 0.6),

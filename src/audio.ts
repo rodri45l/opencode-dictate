@@ -11,6 +11,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
+import { adaptGain, clampGain, CLIP_DETECT, loadGain, saveGain } from "./gain"
 import { voiceprint } from "./mfcc"
 import { clippingRatio, decodePcm, periodicity } from "./speech"
 import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
@@ -43,6 +44,10 @@ export interface CaptureConfig {
   /** Peak amplitude above which a tick counts as voice. */
   vadThreshold: number
   speaker?: { enabled: boolean }
+  /** Fixed input gain 0..1; when set, automatic adaptation is disabled. */
+  inputGain?: number
+  /** Adapt the input gain from clipping/level (default true). */
+  autoGain?: boolean
   inputDevice?: string
 }
 
@@ -143,8 +148,9 @@ interface Recorder {
   args: string[]
 }
 
-function pickRecorder(config: CaptureConfig, wavPath: string): Recorder | null {
+function pickRecorder(config: CaptureConfig, wavPath: string, gain: number): Recorder | null {
   const maxSec = (config.maxMs / 1000).toFixed(0)
+  const factor = gain.toFixed(2)
   if (which("ffmpeg")) {
     return {
       cmd: "ffmpeg",
@@ -153,6 +159,8 @@ function pickRecorder(config: CaptureConfig, wavPath: string): Recorder | null {
         "-loglevel",
         "error",
         ...ffmpegInput(config.inputDevice),
+        "-af",
+        `volume=${factor}`,
         "-ac",
         "1",
         "-ar",
@@ -164,18 +172,27 @@ function pickRecorder(config: CaptureConfig, wavPath: string): Recorder | null {
       ],
     }
   }
-  // PulseAudio / ALSA recorders (Linux, incl. WSLg).
+  // PulseAudio / ALSA recorders (Linux, incl. WSLg). parecord takes linear gain
+  // 0..65536, so we can keep a hot RDP microphone out of clipping before it is
+  // written; arecord has no gain option.
   if (which("parecord")) {
     return {
       cmd: "parecord",
-      args: ["--format=s16le", `--rate=${RATE}`, "--channels=1", "--file-format=wav", wavPath],
+      args: [
+        "--format=s16le",
+        `--rate=${RATE}`,
+        "--channels=1",
+        `--volume=${Math.round(gain * 65536)}`,
+        "--file-format=wav",
+        wavPath,
+      ],
     }
   }
   if (which("arecord")) {
     return { cmd: "arecord", args: ["-f", "S16LE", "-r", String(RATE), "-c", "1", "-t", "wav", wavPath] }
   }
   if (which("sox")) {
-    return { cmd: "sox", args: ["-d", "-c", "1", "-r", String(RATE), "-t", "wav", wavPath] }
+    return { cmd: "sox", args: ["-d", "-c", "1", "-r", String(RATE), "-t", "wav", wavPath, "vol", factor] }
   }
   return null
 }
@@ -208,7 +225,10 @@ function drainPeak(path: string, offset: number): { peak: number; next: number }
 export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promise<CaptureResult> {
   ensureAudioEnvironment()
   const wavPath = join(tmpdir(), `opencode-dictate-${Date.now()}.wav`)
-  const recorder = pickRecorder(config, wavPath)
+  // A fixed gain wins; otherwise trim automatically so a hot mic never clips.
+  const fixed = typeof config.inputGain === "number" ? clampGain(config.inputGain) : undefined
+  const gain = fixed ?? (config.autoGain === false ? 1 : loadGain())
+  const recorder = pickRecorder(config, wavPath, gain)
   if (!recorder) {
     const hint =
       process.platform === "linux"
@@ -249,15 +269,20 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       let strength = 0
       let clipped = 0
       let print: Float32Array | null = null
-      if (spoken) {
-        try {
-          const samples = decodePcm(readFileSync(wavPath), WAV_HEADER)
+      try {
+        const samples = decodePcm(readFileSync(wavPath), WAV_HEADER)
+        clipped = clippingRatio(samples)
+        if (spoken) {
           strength = periodicity(samples, RATE)
-          clipped = clippingRatio(samples)
           if (config.speaker?.enabled) print = voiceprint(samples, RATE)
-        } catch {
-          // unreadable clip — leave strength at 0, the guard will drop it
         }
+      } catch {
+        // unreadable clip — leave strength at 0, the guard will drop it
+      }
+      // Adapt the gain for next time: back off when saturated, creep up when quiet.
+      if (fixed === undefined && config.autoGain !== false && (spoken || clipped >= CLIP_DETECT)) {
+        const next = adaptGain(gain, clipped, state.loudest)
+        if (Math.abs(next - gain) > 1e-6) saveGain(next)
       }
       resolve({
         wavPath,
