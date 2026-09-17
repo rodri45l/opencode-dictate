@@ -26,6 +26,11 @@ const BASES: Record<string, string> = {
   openrouter: "https://openrouter.ai/api/v1",
 }
 
+/** OpenAI-compatible base URL for a provider we can drive, or undefined. */
+export function providerBase(provider: string): string | undefined {
+  return BASES[provider]
+}
+
 function readJson(path: string): Record<string, unknown> {
   try {
     return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>

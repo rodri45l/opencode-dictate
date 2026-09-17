@@ -43,6 +43,7 @@ import { join } from "node:path"
 import { loadConfig, LOCAL_STT_URL, type VoiceOptions } from "./config"
 import { probeStt } from "./detect"
 import { listen } from "./pipeline"
+import { classifyControl, classifyPermission } from "./sentinels"
 
 
 const DICTATE_KEYS = ["<leader>d", "f9"]
@@ -75,16 +76,6 @@ const AMBER = "#E0A64B"
 const IDLE = "#4E545A"
 // Scanner flash shown for a moment after a spoken stop.
 const ALERT = "#FFFFFF"
-
-// ----- voice control sentinels -----
-// The local LLM pass (llm_clean.py) makes every semantic decision and emits one
-// of these tokens; the plugin only matches the token. No phrase lists live here.
-
-const STOP_SENTINEL = /\[\[\s*stop\s*\]\]/i
-const CONVERSATION_OFF_SENTINEL = /\[\[\s*conversation[_\s-]?off\s*\]\]/i
-const ALLOW_SENTINEL = /\[\[\s*allow\s*\]\]/i
-const ALWAYS_SENTINEL = /\[\[\s*always\s*\]\]/i
-const DENY_SENTINEL = /\[\[\s*deny\s*\]\]/i
 
 
 
@@ -312,10 +303,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   }
 
   async function answerPermission(request: PermissionRequest, text: string): Promise<void> {
-    let reply: "once" | "always" | "reject" | undefined
-    if (ALWAYS_SENTINEL.test(text)) reply = "always"
-    else if (DENY_SENTINEL.test(text)) reply = "reject"
-    else if (ALLOW_SENTINEL.test(text)) reply = "once"
+    const reply = classifyPermission(text)
     if (!reply) {
       api.ui.toast({ variant: "warning", message: `Voice answer: say yes, always or no to ${request.permission}` })
       return
@@ -391,8 +379,9 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       const permission = pendingPermission()
       if (text) {
         dbg(`voice heard: "${text}"`)
-        if (CONVERSATION_OFF_SENTINEL.test(text)) exitConversation()
-        else if (STOP_SENTINEL.test(text)) await interruptSession(text)
+        const control = classifyControl(text)
+        if (control === "conversation-off") exitConversation()
+        else if (control === "stop") await interruptSession(text)
         else if (question) await answerQuestion(question, text)
         else if (permission) await answerPermission(permission, text)
         else await sendPrompt(text)

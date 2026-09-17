@@ -36,11 +36,31 @@
   "scripts": {
     "build": "bun build ./src/index.tsx --outfile=dist/index.js --target=bun --format=esm --external solid-js --external '@opentui/solid' --external '@opencode-ai/plugin' --external 'node:*'",
     "deploy": "mkdir -p \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate\" && cp src/*.ts src/*.tsx \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate/\"",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test && bun run build",
     "prepublishOnly": "bun run build"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.31",
+    "@opencode-ai/sdk": "^1.18.31",
+    "@opentui/solid": "^0.5.11",
     "@types/bun": "latest",
     "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "",
+    "@opentui/solid": ""
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "opencode": ">=1.18.0"
   }
 }

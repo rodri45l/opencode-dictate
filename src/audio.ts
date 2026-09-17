@@ -11,6 +11,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
+import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
 
 export interface CaptureHandlers {
   onPhase(name: "speech" | "silence" | "recording" | "transcribing"): void
@@ -34,11 +35,8 @@ export interface CaptureConfig {
 const RATE = 16_000
 const TICK_MS = 80
 const WAV_HEADER = 44
-// Short pauses between words are not "finished speaking". Only report silence
-// once a dip lasts this long, otherwise the indicator flickers to idle mid-word.
-const SILENCE_HANGOVER_MS = 350
 
-function which(bin: string): boolean {
+export function which(bin: string): boolean {
   // path.delimiter, not ":" — Windows PATH entries contain a drive colon, and
   // splitting on ":" there shreds every entry so nothing is ever found.
   const dirs = (process.env.PATH ?? "").split(delimiter)
@@ -99,22 +97,31 @@ function defaultFfmpegDevice(): string | undefined {
   return cachedDevice ?? undefined
 }
 
-function ffmpegInput(device?: string): string[] {
-  const given = device?.trim()
-  switch (process.platform) {
+/** Normalise a device into the form the platform's ffmpeg input expects. */
+export function ffmpegDeviceArgs(
+  platform: NodeJS.Platform,
+  given: string | undefined,
+  probed: string | undefined,
+): string[] {
+  const device = given?.trim()
+  switch (platform) {
     case "darwin": {
       // avfoundation wants "video:audio" indices, e.g. ":1".
-      const dev = given ? (given.includes(":") ? given : `:${given}`) : (defaultFfmpegDevice() ?? ":0")
+      const dev = device ? (device.includes(":") ? device : `:${device}`) : (probed ?? ":0")
       return ["-f", "avfoundation", "-i", dev]
     }
     case "win32": {
       // dshow wants the literal device name, e.g. audio="Microphone (Realtek)".
-      const dev = given ? (given.startsWith("audio=") ? given : `audio=${given}`) : (defaultFfmpegDevice() ?? "audio=default")
+      const dev = device ? (device.startsWith("audio=") ? device : `audio=${device}`) : (probed ?? "audio=default")
       return ["-f", "dshow", "-i", dev]
     }
     default:
-      return ["-f", "pulse", "-i", given || "default"]
+      return ["-f", "pulse", "-i", device || "default"]
   }
+}
+
+function ffmpegInput(device?: string): string[] {
+  return ffmpegDeviceArgs(process.platform, device, defaultFfmpegDevice())
 }
 
 interface Recorder {
@@ -200,19 +207,18 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
     const child = spawn(recorder.cmd, recorder.args, { stdio: ["ignore", "ignore", "pipe"] })
     handlers.onPhase("recording")
 
-    const threshold = Number(process.env.VOICE_VAD_THRESHOLD ?? "0.025") || 0.025
+    const vadConfig: VadConfig = {
+      threshold: Number(process.env.VOICE_VAD_THRESHOLD ?? "0.025") || 0.025,
+      silenceMs: config.silenceMs,
+      hangoverMs: SILENCE_HANGOVER_MS,
+      minSpeechMs: config.minSpeechMs,
+      startTimeoutMs: config.startTimeoutMs,
+      maxMs: config.maxMs,
+    }
     let offset = WAV_HEADER
-    let spoken = false
-    let voicedMs = 0
-    let loudest = 0
-    let quietFor = 0
-    let elapsed = 0
+    let state = initialVadState()
     let stopped = false
-    let silent = false
 
-    // A single loud tick (a cough, a door, headphone bleed) is not speech. Only
-    // report an utterance once enough voiced audio accumulated — otherwise we
-    // hand pure noise to Whisper and it invents a sentence.
     const finish = () => {
       if (stopped) return
       stopped = true
@@ -222,41 +228,21 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       } catch {
         // already gone
       }
-      resolve({ wavPath, hadSpeech: spoken && voicedMs >= config.minSpeechMs })
+      // A single loud tick (a cough, a door, headphone bleed) is not speech:
+      // hadSpeech also requires enough voiced audio, so noise never reaches
+      // Whisper (which would otherwise invent a sentence).
+      resolve({ wavPath, hadSpeech: hadSpeech(state, vadConfig) })
     }
 
     const timer = setInterval(() => {
       const { peak, next } = drainPeak(wavPath, offset)
       offset = next
-      elapsed += TICK_MS
+      handlers.onLevel(Math.min(1, peak * 1.8))
 
-      const level = Math.min(1, peak * 1.8)
-      handlers.onLevel(level)
-      const voicing = peak > threshold
-
-      if (voicing) {
-        voicedMs += TICK_MS
-        if (peak > loudest) loudest = peak
-        quietFor = 0
-        // Announce speech on the first voice and again whenever speech resumes
-        // after a pause, so the indicator goes back to red for the whole turn.
-        if (!spoken || silent) {
-          spoken = true
-          silent = false
-          handlers.onPhase("speech")
-        }
-      } else if (spoken) {
-        quietFor += TICK_MS
-        if (!silent && quietFor >= SILENCE_HANGOVER_MS) {
-          silent = true
-          handlers.onPhase("silence")
-        }
-        if (quietFor >= config.silenceMs) return finish()
-      } else if (elapsed >= config.startTimeoutMs) {
-        return finish()
-      }
-
-      if (elapsed >= config.maxMs) finish()
+      const step = vadStep(state, peak, TICK_MS, vadConfig)
+      state = step.state
+      for (const event of step.events) handlers.onPhase(event)
+      if (state.done) finish()
     }, TICK_MS)
 
     child.on("error", (error) => {
