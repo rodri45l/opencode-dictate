@@ -26,8 +26,10 @@ export interface VoiceOptions {
   stt?: string | { url?: string; key?: string; model?: string }
   /** Optional override; by default the LLM opencode is configured with is used. */
   llm?: string | { url?: string; key?: string; model?: string }
-  /** Force the builtin pipeline or the external `dictate` command. */
+  /** Force the builtin pipeline or an external recorder/transcriber command. */
   backend?: "builtin" | "command"
+  /** Command to run for backend "command" (default: "dictate" on PATH). */
+  command?: string
   silenceMs?: number
   maxMs?: number
   startTimeoutMs?: number
@@ -39,6 +41,8 @@ export interface VoiceConfig {
   stt: SttConfig | null
   llm: LlmConfig | null
   backend: "builtin" | "command" | "auto"
+  /** Command used by backend "command". */
+  command: string
   silenceMs: number
   maxMs: number
   startTimeoutMs: number
@@ -103,6 +107,7 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
     stt,
     llm,
     backend: options.backend ?? ((env("VOICE_BACKEND") as VoiceConfig["backend"]) || "auto"),
+    command: options.command ?? (env("VOICE_COMMAND") || "dictate"),
     silenceMs: num(options.silenceMs ?? Number(env("VOICE_SILENCE_MS")), 900),
     maxMs: num(options.maxMs ?? Number(env("VOICE_MAX_MS")), 60_000),
     startTimeoutMs: num(options.startTimeoutMs ?? Number(env("VOICE_START_TIMEOUT_MS")), 4_000),

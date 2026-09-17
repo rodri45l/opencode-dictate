@@ -44,7 +44,7 @@ import { loadConfig, LOCAL_STT_URL, type VoiceOptions } from "./config"
 import { probeStt } from "./detect"
 import { listen } from "./pipeline"
 
-const SCRIPT = join(homedir(), ".local", "bin", "dictate")
+
 const DICTATE_KEYS = ["<leader>d", "f9"]
 const CONVERSE_KEYS = ["<leader>v", "f10"]
 const INDICATOR_KEYS = ["f7"]
@@ -184,7 +184,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       }
       const args = conv ? CONV_ARGS : []
       dbg(`spawn conv=${conv}`)
-      const child = spawn(SCRIPT, args, { env })
+      const child = spawn(voiceConfig.command, args, { env })
       activeChild = child
       let out = ""
       let err = ""
