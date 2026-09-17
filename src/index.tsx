@@ -35,7 +35,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPromptRef, TuiSlotContext, TuiSlotPlugin } from "@opencode-ai/plugin/tui"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 import type { JSX } from "@opentui/solid"
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { spawn, type ChildProcess } from "node:child_process"
 import { appendFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -493,12 +493,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     return <text>{cells()}</text>
   }
 
-  // Diagnostics: log whenever the state the indicator depends on changes, so we
-  // can tell whether the slot is reacting or the content is merely clipped.
-  createEffect(() => {
-    dbg(`indicator state conv=${convOn()} status=${status()}`)
-  })
-  function Indicator(props: { compact?: boolean } = {}): JSX.Element {
+  function Indicator(): JSX.Element {
     // Text is only for things the scanner cannot express: a transient notice or
     // a pending question. Recording vs transcribing is the scanner colour.
     const label = () => {
@@ -512,27 +507,25 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       if (alertColor()) return alertColor()
       return status() === "speaking" ? RED : status() === "transcribing" ? AMBER : IDLE
     }
-    const row = (
-      <box flexDirection="row" gap={2} justifyContent="center">
-        <Show when={convOn()}>
-          <Show
-            when={indicator() === "waves"}
-            fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
-          >
-            <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
-          </Show>
-        </Show>
-        <Show when={label() !== ""}>
-          <text fg={color()}>{label()}</text>
-        </Show>
-      </box>
-    )
-    // The composer only lays out the prompt itself, so a sibling row is dropped.
-    // Compact mode renders just the row, for the prompt's meta row.
-    if (props.compact) return row
+    // width="100%" matters: without it the row collapses and nothing shows. The
+    // composer gives the slot zero width and lets the prompt size itself, so an
+    // unsized sibling row would be laid out at width 0.
     return (
-      <box flexDirection="column" marginBottom={1}>
-        {row}
+      <box flexDirection="column" width="100%" marginBottom={1}>
+        {/* Centred over the prompt rather than indented with it. */}
+        <box flexDirection="row" width="100%" gap={2} justifyContent="center">
+          <Show when={convOn()}>
+            <Show
+              when={indicator() === "waves"}
+              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
+            >
+              <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
+            </Show>
+          </Show>
+          <Show when={label() !== ""}>
+            <text fg={color()}>{label()}</text>
+          </Show>
+        </box>
       </box>
     )
   }
@@ -625,11 +618,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           try {
             return (
               <box flexDirection="column" width="100%">
-                {/* Static, signal-free marker: if this shows, the slot renders. */}
-                <box flexDirection="row" width="100%" justifyContent="center">
-                  <text fg="#FF5555">DICTATE-ABOVE</text>
-                  <Indicator compact />
-                </box>
+                <Indicator />
                 <api.ui.Prompt
                   sessionID={input.session_id}
                   visible={input.visible}
@@ -650,25 +639,15 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           dbg("slot home_prompt called")
           try {
             return (
-              <api.ui.Prompt
-                ref={(r) => bind(r, input.ref)}
-                right={
-                  <box flexDirection="row" gap={2}>
-                    <Indicator compact />
-                    <api.ui.Slot name="home_prompt_right" />
-                  </box>
-                }
-              />
+              <box flexDirection="column" width="100%">
+                <Indicator />
+                <api.ui.Prompt ref={(r) => bind(r, input.ref)} right={<api.ui.Slot name="home_prompt_right" />} />
+              </box>
             )
           } catch (error) {
             dbg(`home_prompt render failed: ${error}`)
             return <api.ui.Prompt ref={(r) => bind(r, input.ref)} />
           }
-        },
-        // Fallback: the sidebar is a slot we know renders (the other plugins use
-        // it). If the prompt-slot indicator still doesn't show, this one will.
-        sidebar_content(_ctx: TuiSlotContext, _input: { session_id: string }): JSX.Element {
-          return <Indicator />
         },
       },
     }

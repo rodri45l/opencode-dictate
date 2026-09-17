@@ -35,6 +35,7 @@
   ],
   "scripts": {
     "build": "bun build ./src/index.tsx --outfile=dist/index.js --target=bun --format=esm --external solid-js --external '@opentui/solid' --external '@opencode-ai/plugin' --external 'node:*'",
+    "deploy": "mkdir -p \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate\" && cp src/*.ts src/*.tsx \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate/\"",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run build"
   },
