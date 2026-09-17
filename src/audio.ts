@@ -34,6 +34,9 @@ export interface CaptureConfig {
 const RATE = 16_000
 const TICK_MS = 80
 const WAV_HEADER = 44
+// Short pauses between words are not "finished speaking". Only report silence
+// once a dip lasts this long, otherwise the indicator flickers to idle mid-word.
+const SILENCE_HANGOVER_MS = 350
 
 function which(bin: string): boolean {
   const dirs = (process.env.PATH ?? "").split(":")
@@ -143,6 +146,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
     let quietFor = 0
     let elapsed = 0
     let stopped = false
+    let silent = false
 
     // A single loud tick (a cough, a door, headphone bleed) is not speech. Only
     // report an utterance once enough voiced audio accumulated — otherwise we
@@ -172,13 +176,19 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
         voicedMs += TICK_MS
         if (peak > loudest) loudest = peak
         quietFor = 0
-        if (!spoken) {
+        // Announce speech on the first voice and again whenever speech resumes
+        // after a pause, so the indicator goes back to red for the whole turn.
+        if (!spoken || silent) {
           spoken = true
+          silent = false
           handlers.onPhase("speech")
         }
       } else if (spoken) {
-        if (quietFor === 0) handlers.onPhase("silence")
         quietFor += TICK_MS
+        if (!silent && quietFor >= SILENCE_HANGOVER_MS) {
+          silent = true
+          handlers.onPhase("silence")
+        }
         if (quietFor >= config.silenceMs) return finish()
       } else if (elapsed >= config.startTimeoutMs) {
         return finish()
