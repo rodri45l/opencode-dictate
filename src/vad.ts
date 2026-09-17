@@ -19,6 +19,8 @@ export interface VadConfig {
 export interface VadState {
   spoken: boolean
   voicedMs: number
+  /** Loudest peak seen, used to tell real speech from a noisy room. */
+  loudest: number
   quietFor: number
   elapsed: number
   /** Set once a pause has been reported, so speech can be re-announced. */
@@ -32,7 +34,7 @@ export type VadEvent = "speech" | "silence"
 export const SILENCE_HANGOVER_MS = 350
 
 export function initialVadState(): VadState {
-  return { spoken: false, voicedMs: 0, quietFor: 0, elapsed: 0, silent: false, done: false }
+  return { spoken: false, voicedMs: 0, loudest: 0, quietFor: 0, elapsed: 0, silent: false, done: false }
 }
 
 export function vadStep(
@@ -46,6 +48,7 @@ export function vadStep(
 
   if (peak > config.threshold) {
     next.voicedMs += tickMs
+    if (peak > next.loudest) next.loudest = peak
     next.quietFor = 0
     // Announce on the first voice and again when speech resumes after a pause,
     // so the status colour covers the whole turn rather than its first tick.

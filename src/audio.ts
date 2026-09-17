@@ -21,6 +21,9 @@ export interface CaptureHandlers {
 export interface CaptureResult {
   wavPath: string
   hadSpeech: boolean
+  /** Stats kept for the hallucination guard downstream. */
+  voicedMs: number
+  loudest: number
 }
 
 export interface CaptureConfig {
@@ -29,6 +32,8 @@ export interface CaptureConfig {
   startTimeoutMs: number
   /** Voiced milliseconds required before a clip counts as an utterance. */
   minSpeechMs: number
+  /** Peak amplitude above which a tick counts as voice. */
+  vadThreshold: number
   inputDevice?: string
 }
 
@@ -208,7 +213,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
     handlers.onPhase("recording")
 
     const vadConfig: VadConfig = {
-      threshold: Number(process.env.VOICE_VAD_THRESHOLD ?? "0.025") || 0.025,
+      threshold: config.vadThreshold,
       silenceMs: config.silenceMs,
       hangoverMs: SILENCE_HANGOVER_MS,
       minSpeechMs: config.minSpeechMs,
@@ -231,7 +236,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       // A single loud tick (a cough, a door, headphone bleed) is not speech:
       // hadSpeech also requires enough voiced audio, so noise never reaches
       // Whisper (which would otherwise invent a sentence).
-      resolve({ wavPath, hadSpeech: hadSpeech(state, vadConfig) })
+      resolve({ wavPath, hadSpeech: hadSpeech(state, vadConfig), voicedMs: state.voicedMs, loudest: state.loudest })
     }
 
     const timer = setInterval(() => {

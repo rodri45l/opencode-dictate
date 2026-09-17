@@ -6,6 +6,7 @@ import { type VoiceConfig } from "./config"
 import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
+import { isSilenceHallucination } from "./hallucination"
 
 export interface ListenOptions {
   control: boolean
@@ -19,13 +20,17 @@ export async function listen(
 ): Promise<string> {
   if (!config.stt) throw new Error("no speech-to-text configured — set VOICE_STT_URL")
 
-  const { wavPath, hadSpeech } = await capture(config, handlers)
-  if (!hadSpeech) return ""
+  const captured = await capture(config, handlers)
+  if (!captured.hadSpeech) return ""
+  const { wavPath } = captured
   handlers.onPhase("transcribing")
 
   try {
     const raw = await transcribe(wavPath, config.stt)
     if (!raw) return ""
+    // Cloud Whisper invents phrases like "Thank you." from noise; drop those
+    // when the clip was too weak to actually be the phrase.
+    if (isSilenceHallucination(raw, captured)) return ""
     if (!config.llm) return raw
     return await clean(raw, config.llm, { control: options.control, permission: options.permission })
   } finally {

@@ -35,6 +35,8 @@ export interface VoiceOptions {
   startTimeoutMs?: number
   /** Voiced milliseconds required before a clip is treated as speech. */
   minSpeechMs?: number
+  /** Peak amplitude above which a tick counts as voice (default 0.03). */
+  vadThreshold?: number
   /** Recorder device override (e.g. an avfoundation index). */
   inputDevice?: string
 }
@@ -49,6 +51,7 @@ export interface VoiceConfig {
   maxMs: number
   startTimeoutMs: number
   minSpeechMs: number
+  vadThreshold: number
   inputDevice?: string
 }
 
@@ -115,6 +118,7 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
     maxMs: num(options.maxMs ?? Number(env("VOICE_MAX_MS")), 60_000),
     startTimeoutMs: num(options.startTimeoutMs ?? Number(env("VOICE_START_TIMEOUT_MS")), 4_000),
     minSpeechMs: num(options.minSpeechMs ?? Number(env("VOICE_MIN_SPEECH_MS")), 300),
+    vadThreshold: num(options.vadThreshold ?? Number(env("VOICE_VAD_THRESHOLD")), 0.03),
     inputDevice: options.inputDevice ?? (env("VOICE_INPUT_DEVICE") || undefined),
   }
 }

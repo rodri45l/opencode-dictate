@@ -83,6 +83,14 @@ describe("vadStep", () => {
     expect(state.done).toBe(true)
   })
 
+  test("tracks the loudest peak for the hallucination guard", () => {
+    let state = initialVadState()
+    state = vadStep(state, 0.2, TICK, CONFIG).state
+    state = vadStep(state, 0.6, TICK, CONFIG).state
+    state = vadStep(state, 0.3, TICK, CONFIG).state
+    expect(state.loudest).toBe(0.6)
+  })
+
   test("does not mutate the state passed in", () => {
     const before = initialVadState()
     const snapshot = { ...before }
