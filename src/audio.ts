@@ -6,10 +6,10 @@
 // energy VAD decides where the utterance ends. Recording lives in *our* event
 // loop, so one bad recorder can never spin the TUI.
 
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
 
 export interface CaptureHandlers {
@@ -39,23 +39,81 @@ const WAV_HEADER = 44
 const SILENCE_HANGOVER_MS = 350
 
 function which(bin: string): boolean {
-  const dirs = (process.env.PATH ?? "").split(":")
-  const exts = process.platform === "win32" ? [".exe", ".cmd", ""] : [""]
+  // path.delimiter, not ":" — Windows PATH entries contain a drive colon, and
+  // splitting on ":" there shreds every entry so nothing is ever found.
+  const dirs = (process.env.PATH ?? "").split(delimiter)
+  const exts =
+    process.platform === "win32"
+      ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
+      : [""]
   for (const dir of dirs) {
-    for (const ext of exts) if (dir && existsSync(join(dir, bin + ext))) return true
+    if (!dir) continue
+    for (const ext of exts) if (existsSync(join(dir, bin + ext))) return true
   }
   return false
 }
 
+let cachedDevice: string | null | undefined
+
+/** Ask ffmpeg which capture device to use. avfoundation/dshow have no "default". */
+function defaultFfmpegDevice(): string | undefined {
+  if (cachedDevice !== undefined) return cachedDevice ?? undefined
+  cachedDevice = null
+  const input = process.platform === "win32" ? "dummy" : ""
+  const driver = process.platform === "win32" ? "dshow" : "avfoundation"
+  let output = ""
+  try {
+    const result = spawnSync("ffmpeg", ["-hide_banner", "-list_devices", "true", "-f", driver, "-i", input], {
+      encoding: "utf8",
+      timeout: 4_000,
+    })
+    output = result.stderr ?? ""
+  } catch {
+    return undefined
+  }
+  const lines = output.split("\n")
+  let inAudio = false
+  for (const line of lines) {
+    if (process.platform === "darwin") {
+      if (/AVFoundation audio devices:/i.test(line)) {
+        inAudio = true
+        continue
+      }
+      const match = inAudio ? line.match(/\[\s*(\d+)\]\s+(.+)$/) : null
+      if (match) {
+        cachedDevice = `:${match[1]}`
+        break
+      }
+    } else {
+      if (/DirectShow audio devices/i.test(line)) {
+        inAudio = true
+        continue
+      }
+      const match = inAudio ? line.match(/"([^"]+)"/) : null
+      if (match) {
+        cachedDevice = `audio=${match[1]}`
+        break
+      }
+    }
+  }
+  return cachedDevice ?? undefined
+}
+
 function ffmpegInput(device?: string): string[] {
-  const d = device ?? ""
+  const given = device?.trim()
   switch (process.platform) {
-    case "darwin":
-      return ["-f", "avfoundation", "-i", d || ":0"]
-    case "win32":
-      return ["-f", "dshow", "-i", `audio=${d || "default"}`]
+    case "darwin": {
+      // avfoundation wants "video:audio" indices, e.g. ":1".
+      const dev = given ? (given.includes(":") ? given : `:${given}`) : (defaultFfmpegDevice() ?? ":0")
+      return ["-f", "avfoundation", "-i", dev]
+    }
+    case "win32": {
+      // dshow wants the literal device name, e.g. audio="Microphone (Realtek)".
+      const dev = given ? (given.startsWith("audio=") ? given : `audio=${given}`) : (defaultFfmpegDevice() ?? "audio=default")
+      return ["-f", "dshow", "-i", dev]
+    }
     default:
-      return ["-f", "pulse", "-i", d || "default"]
+      return ["-f", "pulse", "-i", given || "default"]
   }
 }
 
@@ -131,7 +189,11 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
   const wavPath = join(tmpdir(), `opencode-dictate-${Date.now()}.wav`)
   const recorder = pickRecorder(config, wavPath)
   if (!recorder) {
-    return Promise.reject(new Error("no recorder found — install ffmpeg, parecord, arecord or sox"))
+    const hint =
+      process.platform === "linux"
+        ? "install ffmpeg, parecord, arecord or sox"
+        : "install ffmpeg — macOS and Windows have no parecord/arecord fallback"
+    return Promise.reject(new Error(`no recorder found — ${hint}`))
   }
 
   return new Promise<CaptureResult>((resolve, reject) => {

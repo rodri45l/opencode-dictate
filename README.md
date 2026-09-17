@@ -76,9 +76,17 @@ still work and are overridden by plugin options.
 
 **Auto-detection:** if no STT is configured the plugin probes
 `http://127.0.0.1:8080/v1` and uses it when a local server answers; on Linux it
-also sets `PULSE_SERVER` for WSLg automatically. Audio is captured with
-**ffmpeg** (cross-platform), which must be on `PATH`. With `backend: "command"`
-the plugin instead runs an external `dictate` command (e.g. a local GPU build).
+also sets `PULSE_SERVER` for WSLg automatically.
+
+**Recorders:** the plugin uses the first of `ffmpeg`, `parecord`, `arecord`,
+`sox` found on `PATH`. `ffmpeg` is the only cross-platform option, so macOS and
+Windows need it installed; on macOS grant the terminal microphone permission,
+and on Windows the plugin auto-selects the first DirectShow audio device (or
+pass `inputDevice: "Microphone (…)"`). Set `VOICE_DEBUG=1` to log to
+`VOICE_DEBUG_LOG` (default `/tmp/opencode/dictate-plugin.log`).
+
+With `backend: "command"` the plugin instead runs an external `dictate` command
+(e.g. a local GPU build).
 
 See `servers/faster-whisper/` for a dependency-free local STT server.
 
@@ -100,9 +108,12 @@ plugin:  capture (local recorder) + VAD (endpointing) + cleanup + loop + UI
 
 | OS | Status |
 |---|---|
-| Linux / WSL | working (reference backend: local GPU Whisper) |
-| macOS | planned (capture via `ffmpeg avfoundation`) |
-| Windows | planned (capture via `ffmpeg dshow`) |
+| Linux / WSL | working (`ffmpeg`, `parecord`, `arecord` or `sox`) |
+| macOS | implemented (`ffmpeg avfoundation`, auto-picks the first audio device; needs mic permission) |
+| Windows | implemented (`ffmpeg dshow`, auto-picks the first audio device) |
+
+macOS and Windows are code-complete but untested on real hardware here — the
+device auto-detection has not been run on those platforms.
 
 ## License
 

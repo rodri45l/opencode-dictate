@@ -52,8 +52,12 @@ const INDICATOR_KEYS = ["f7"]
 // the loop can cycle (and so the single-threaded daemon is never held for long).
 const CONV_ARGS = ["--start-timeout", "4", "--silence-ms", "1100", "--max-seconds", "60"]
 
-const DEBUG_LOG = "/tmp/opencode/dictate-plugin.log"
+// Debug logging is opt-in: VOICE_DEBUG=1 (or VOICE_DEBUG=log) writes to
+// VOICE_DEBUG_LOG, otherwise the plugin is silent on disk.
+const DEBUG = process.env.VOICE_DEBUG === "1" || process.env.VOICE_DEBUG === "log" || process.env.VOICE_DEBUG === "true"
+const DEBUG_LOG = process.env.VOICE_DEBUG_LOG ?? "/tmp/opencode/dictate-plugin.log"
 function dbg(message: string): void {
+  if (!DEBUG) return
   try {
     appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${message}\n`)
   } catch {
