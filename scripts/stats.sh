@@ -15,13 +15,12 @@ echo
 echo "github"
 GH=$(command -v gh || echo "")
 if [ -n "$GH" ]; then
-  "$GH" repo view "$repo" --json stargazerCount,forkCount,openIssuesCount,visibility 2>/dev/null \
+  "$GH" repo view "$repo" --json stargazerCount,forkCount,visibility 2>/dev/null \
     | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 print('  stars:      ', d.get('stargazerCount'))
 print('  forks:      ', d.get('forkCount'))
-print('  open issues:', d.get('openIssuesCount'))
 print('  visibility: ', d.get('visibility'))
 " 2>/dev/null || echo "  (gh unavailable)"
 fi
