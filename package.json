@@ -1,6 +1,6 @@
 {
   "name": "opencode-dictate",
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "publishConfig": {
     "tag": "beta",
     "access": "public"
@@ -17,13 +17,13 @@
   },
   "homepage": "https://github.com/rodri45l/opencode-dictate#readme",
   "files": [
-    "src",
+    "dist",
     "README.md",
     "LICENSE"
   ],
   "exports": {
     "./tui": {
-      "import": "./src/index.tsx"
+      "import": "./dist/tui.js"
     }
   },
   "keywords": [
@@ -38,13 +38,14 @@
     "hands-free"
   ],
   "scripts": {
-    "build": "bun build ./src/index.tsx --outfile=dist/index.js --target=bun --format=esm --production --external solid-js --external '@opentui/solid' --external '@opencode-ai/plugin' --external 'node:*'",
+    "build": "bun run build:tui && bun build ./src/index.tsx --outfile=dist/index.js --target=bun --format=esm --production --external solid-js --external '@opentui/solid' --external '@opencode-ai/plugin' --external 'node:*'",
     "deploy": "mkdir -p \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate\" && cp src/*.ts src/*.tsx \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate/\"",
     "test": "bun test",
     "samples:record": "bash scripts/record-sample.sh",
     "samples:analyze": "bun scripts/analyze-samples.ts",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun test && bun run build"
+    "check": "bun run typecheck && bun test && bun run build",
+    "build:tui": "bun scripts/build-tui.mjs"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.31",
