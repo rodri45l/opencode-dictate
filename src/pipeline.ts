@@ -84,6 +84,9 @@ export async function listen(
           options.log?.(`drop other speaker (similarity=${score.toFixed(2)} < ${required}) transcript="${raw}"`)
           return ""
         }
+        // Keep learning. The profile follows the voice as the microphone moves
+        // or delivery drifts, so a frozen average cannot start rejecting you.
+        saveProfile(enroll(profile, captured.print))
         options.log?.(`speaker ok (similarity=${score.toFixed(2)})`)
       }
     }

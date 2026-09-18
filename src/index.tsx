@@ -50,6 +50,7 @@ import { classifyControl, classifyPermission } from "./sentinels"
 const DICTATE_KEYS = ["<leader>d", "f9"]
 const CONVERSE_KEYS = ["<leader>v", "f10"]
 const INDICATOR_KEYS = ["f7"]
+const MUTE_KEYS = ["<leader>m", "f8"]
 // In conversation mode each call waits a short while for speech, then returns so
 // the loop can cycle (and so the single-threaded daemon is never held for long).
 const CONV_ARGS = ["--start-timeout", "4", "--silence-ms", "1100", "--max-seconds", "60"]
@@ -76,6 +77,8 @@ const GREEN = "#9CAF8B"
 const YELLOW = "#E5C07B"
 const AMBER = "#E0A64B"
 const IDLE = "#4E545A"
+// Muted: a still, dull bar — deliberately flatter than the idle sweep.
+const MUTED = "#3A3E44"
 // Scanner flash shown for a moment after a spoken stop.
 const ALERT = "#FFFFFF"
 
@@ -124,6 +127,10 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       ? "waves"
       : "scanner",
   )
+  // Mute: while on, nothing is captured at all (not captured-and-discarded), so
+  // no audio can reach the transcriber. Persisted through the host key-value
+  // store so it survives a restart.
+  const [muted, setMuted] = createSignal<boolean>(api.kv.get<boolean>("dictate.muted", false))
   let promptRef: TuiPromptRef | undefined
   let sessionId: string | undefined
   let activeChild: ChildProcess | undefined
@@ -223,6 +230,10 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
 
   async function dictate(): Promise<void> {
     dbg(`dictate() status=${status()}`)
+    if (muted()) {
+      api.ui.toast({ variant: "info", message: "Dictation is muted" })
+      return
+    }
     if (status() !== "idle") return
     setStatus("recording")
     api.ui.toast({ variant: "info", message: "Dictation: recording — speak, then pause" })
@@ -369,6 +380,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     // we must not respawn in a tight loop and freeze the TUI.
     let idleRounds = 0
     while (convOn()) {
+      // Muted: stay in conversation mode but do not even open the microphone.
+      if (muted()) {
+        setStatus("idle")
+        await sleep(250)
+        continue
+      }
       let text = ""
       // Tell the LLM which control tokens to consider before it transcribes.
       const mode = pendingPermission() ? ("permission" as const) : undefined
@@ -453,10 +470,24 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     api.ui.toast({ message: `Indicator: ${next}` })
   }
 
+  // There is no button to click in the TUI, so mute is a command + keybinding and
+  // the indicator itself is the button face: grey and still while muted.
+  function toggleMute(): void {
+    const next = !muted()
+    setMuted(next)
+    api.kv.set("dictate.muted", next)
+    // Mute now, not at the end of the utterance: stop the recorder mid-capture.
+    if (next) stopActiveRecorders()
+    setStatus("idle")
+    setLevel(0)
+    dbg(`muted ${next}`)
+    api.ui.toast({ variant: next ? "info" : "success", message: next ? "Dictation muted" : "Dictation unmuted" })
+  }
+
   // KITT / Knight Rider sweeping scanner. Its colour IS the status: red while
   // you are speaking, amber while transcribing, dim while listening in silence
   // or idle (the engine emits PHASE:speech / PHASE:silence for this).
-  function Scanner(props: { color: string; alert?: boolean }): JSX.Element {
+  function Scanner(props: { color: string; alert?: boolean; frozen?: boolean }): JSX.Element {
     const WIDTH = 13
     const TAIL = 4
     const [tick, setTick] = createSignal(0)
@@ -471,6 +502,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       return `#${rgb.map((v) => Math.round(v * k).toString(16).padStart(2, "0")).join("")}`
     }
     const cells = () => {
+      // Muted: a still, uniformly dim bar. The absence of motion is the signal.
+      if (props.frozen) {
+        const still: JSX.Element[] = []
+        for (let i = 0; i < WIDTH; i++) still.push(<span style={{ fg: shade(0.22) }}>{"█"}</span>)
+        return still
+      }
       // Alert: the whole bar pulses together (a strobe), which reads very
       // differently from the normal left-right sweep.
       if (props.alert) {
@@ -496,13 +533,15 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     // Text is only for things the scanner cannot express: a transient notice or
     // a pending question. Recording vs transcribing is the scanner colour.
     const label = () => {
+      if (muted()) return "muted"
       if (notice()) return notice()
       if (convOn() && awaiting()) return `? ${awaiting()} — speak`
       return ""
     }
-    const color = () => (notice() ? RED : awaiting() ? YELLOW : GREEN)
+    const color = () => (muted() ? MUTED : notice() ? RED : awaiting() ? YELLOW : GREEN)
     // speech = red, transcribing = amber, listening-but-silent / idle = dim.
     const scannerColor = () => {
+      if (muted()) return MUTED
       if (alertColor()) return alertColor()
       return status() === "speaking" ? RED : status() === "transcribing" ? AMBER : IDLE
     }
@@ -516,9 +555,9 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           <Show when={convOn()}>
             <Show
               when={indicator() === "waves"}
-              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
+              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} frozen={muted()} />}
             >
-              <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
+              <Waves color={scannerColor()} level={muted() ? 0 : level()} alert={alertColor() !== ""} />
             </Show>
           </Show>
           <Show when={label() !== ""}>
@@ -564,11 +603,20 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           slashName: "indicator",
           run: () => switchIndicator(),
         },
+        {
+          name: "dictate.mute",
+          title: "Dictate: mute the microphone",
+          category: "Dictation",
+          namespace: "palette",
+          slashName: "mute",
+          run: () => toggleMute(),
+        },
       ],
       bindings: [
         ...DICTATE_KEYS.map((key) => ({ key, cmd: "dictate.record", desc: "Dictate into the prompt" })),
         ...CONVERSE_KEYS.map((key) => ({ key, cmd: "dictate.converse", desc: "Toggle conversation mode" })),
         ...INDICATOR_KEYS.map((key) => ({ key, cmd: "dictate.indicator", desc: "Switch indicator style" })),
+        ...MUTE_KEYS.map((key) => ({ key, cmd: "dictate.mute", desc: "Mute / unmute the microphone" })),
       ],
     })
     dbg("registerLayer ok")
@@ -595,6 +643,13 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
         category: "Dictation",
         slash: { name: "indicator" },
         onSelect: () => switchIndicator(),
+      },
+      {
+        title: "Dictate: mute the microphone",
+        value: "dictate.mute",
+        category: "Dictation",
+        slash: { name: "mute" },
+        onSelect: () => toggleMute(),
       },
     ])
   }

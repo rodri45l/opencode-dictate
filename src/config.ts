@@ -46,7 +46,7 @@ export interface VoiceOptions {
   /** Reject speech that doesn't sound like the enrolled speaker. */
   speaker?: {
     enabled?: boolean
-    /** Minimum cosine similarity to the profile (default 0.6). */
+    /** Minimum cosine similarity to the profile (default 0.8). */
     threshold?: number
     /** Stricter bar for known Whisper artifacts like "Thank you." (default 0.9). */
     artifactThreshold?: number
@@ -142,7 +142,10 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
     autoGain: options.autoGain ?? !/^(0|false|off)$/i.test(env("VOICE_AUTO_GAIN")),
     speaker: {
       enabled: options.speaker?.enabled ?? /^(1|true|on)$/i.test(env("VOICE_SPEAKER")),
-      threshold: num(options.speaker?.threshold ?? Number(env("VOICE_SPEAKER_THRESHOLD")), 0.6),
+      // Measured on this user: real speech scores 0.84-0.99 while the phantom
+      // transcripts (Whisper's memorised sign-offs) scored 0.73-0.78, so 0.8
+      // sits in the gap. The profile keeps learning, which lifts real scores.
+      threshold: num(options.speaker?.threshold ?? Number(env("VOICE_SPEAKER_THRESHOLD")), 0.8),
       artifactThreshold: num(
         options.speaker?.artifactThreshold ?? Number(env("VOICE_SPEAKER_ARTIFACT_THRESHOLD")),
         // An observed mic knock was transcribed "Thank you." and scored 0.87,
