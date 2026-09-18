@@ -35,10 +35,15 @@ watch a little status scanner react to your voice — no keyboard required.
 It sits just above the prompt, and it is the whole user interface:
 
 ```
- scanner (f7)                 wave (f7)
-   ▁▂▃▅▇█▇▅▃▂▁▂▃▅▇               ▁▃▅▂▇█▅▃▁▃▅▇▂▁▅       ← moves with your voice
-   ███████████████               ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁       ← muted: still and parked
+ scanner (f7)                               wave (f7)
+   ░▒▓█▓▒░░░░░░░   ← the sweep travels           ▁▃▅▂▇█▅▃▁▃▅▇▂▁▅   ← bars follow your voice
+   ░░░░▒▓█▓▒░░░░   ← muted: parks, dimmed        ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁   ← muted: a flat line
 ```
+
+They say the same thing in two ways: the **scanner** is a bright hump that travels
+along the bar (it shows where it is listening), the **wave** is bars whose height
+follows your loudness. Both use the colours below — muted keeps the shape but drops
+to violet, and the scanner stops mid-bar.
 
 | Colour | Meaning |
 |---|---|
