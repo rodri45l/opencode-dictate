@@ -77,9 +77,9 @@ const GREEN = "#9CAF8B"
 const YELLOW = "#E5C07B"
 const AMBER = "#E0A64B"
 const IDLE = "#4E545A"
-// Muted: a noticeably darker grey than the idle sweep, so the colour alone
-// carries the state. Mute is indicated by colour and nothing else.
-const MUTED = "#2E3237"
+// Muted: grey already means "listening but silent", so mute gets its own hue —
+// a calm blue — and a scanner that stops moving. Both together are unmistakable.
+const MUTED = "#4A6FA5"
 // Scanner flash shown for a moment after a spoken stop.
 const ALERT = "#FFFFFF"
 
@@ -439,7 +439,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
 
   // Amplitude visualiser: a row of bars whose height tracks how loudly you are
   // speaking, shaped into a moving wave. The engine emits PHASE:level:<0..1>.
-  function Waves(props: { color: string; level: number; alert?: boolean }): JSX.Element {
+  function Waves(props: { color: string; level: number; alert?: boolean; frozen?: boolean }): JSX.Element {
     const WIDTH = 13
     const BLOCKS = ["▁", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
     const [tick, setTick] = createSignal(0)
@@ -449,6 +449,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     })
     let smoothed = 0
     const cells = () => {
+      // Muted: a flat, motionless line in the mute colour.
+      if (props.frozen) {
+        const still: JSX.Element[] = []
+        for (let i = 0; i < WIDTH; i++) still.push(<span style={{ fg: props.color }}>{BLOCKS[1]}</span>)
+        return still
+      }
       const target = props.alert
         ? 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(tick() * 1.0))
         : Math.max(0, Math.min(1, props.level))
@@ -488,7 +494,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   // KITT / Knight Rider sweeping scanner. Its colour IS the status: red while
   // you are speaking, amber while transcribing, dim while listening in silence
   // or idle (the engine emits PHASE:speech / PHASE:silence for this).
-  function Scanner(props: { color: string; alert?: boolean }): JSX.Element {
+  function Scanner(props: { color: string; alert?: boolean; frozen?: boolean }): JSX.Element {
     const WIDTH = 13
     const TAIL = 4
     const [tick, setTick] = createSignal(0)
@@ -503,6 +509,13 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       return `#${rgb.map((v) => Math.round(v * k).toString(16).padStart(2, "0")).join("")}`
     }
     const cells = () => {
+      // Muted: the sweep stops. A still bar in the mute colour reads as "off"
+      // rather than "waiting", which the moving grey bar already means.
+      if (props.frozen) {
+        const still: JSX.Element[] = []
+        for (let i = 0; i < WIDTH; i++) still.push(<span style={{ fg: shade(0.45) }}>{"█"}</span>)
+        return still
+      }
       // Alert: the whole bar pulses together (a strobe), which reads very
       // differently from the normal left-right sweep.
       if (props.alert) {
@@ -549,9 +562,9 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           <Show when={convOn()}>
             <Show
               when={indicator() === "waves"}
-              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
+              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} frozen={muted()} />}
             >
-              <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
+              <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} frozen={muted()} />
             </Show>
           </Show>
           <Show when={label() !== ""}>
