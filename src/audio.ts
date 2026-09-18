@@ -11,6 +11,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { delimiter, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { ensureAudioEnvironment } from "./detect"
 import { adaptGain, CLIP_DETECT, loadGain, MAX_GAIN, saveGain } from "./gain"
 import { voiceprint } from "./mfcc"
@@ -216,9 +217,38 @@ export function withDeadline(recorder: Recorder, maxSec: string, hasTimeout = wh
   return { cmd: "timeout", args: ["-k", "3", maxSec, recorder.cmd, ...recorder.args] }
 }
 
+/**
+ * The recorder that ships inside this package, if one is built for this platform.
+ *
+ * It exists so installing the plugin is enough: miniaudio (MIT-0) talks to
+ * CoreAudio/ALSA/PulseAudio/WASAPI directly, so nobody has to `brew install
+ * ffmpeg` first. System tools stay as fallbacks for platforms we do not build for.
+ */
+export function bundledRecorder(config: CaptureConfig, gain: number): Recorder | null {
+  const os = process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : null
+  if (!os) return null
+  const arch = process.arch === "arm64" ? "arm64" : "x64"
+  let path: string
+  try {
+    path = fileURLToPath(new URL(`../bin/${os}-${arch}/opencode-dictate-recorder`, import.meta.url))
+  } catch {
+    return null
+  }
+  if (!existsSync(path)) return null
+  // It stops itself, so no external deadline wrapper is needed.
+  const args = ["--seconds", (config.maxMs / 1000).toFixed(0), "--gain", gain.toFixed(2)]
+  const device = config.inputDevice?.trim()
+  const index = device?.startsWith(":") ? device.slice(1) : device
+  if (index && /^\d+$/.test(index)) args.push("--device-index", index)
+  return { cmd: path, args }
+}
+
 export function pickRecorder(config: CaptureConfig, gain: number): Recorder | null {
   const maxSec = (config.maxMs / 1000).toFixed(0)
   const factor = gain.toFixed(2)
+  // Prefer the recorder we ship: nothing to install, and it streams live.
+  const bundled = bundledRecorder(config, gain)
+  if (bundled) return bundled
   // Every recorder writes raw 16-bit mono PCM to stdout, never to a file: a pipe
   // streams immediately on every platform, while ffmpeg on macOS flushes file
   // output in ~256 KB blocks (≈8 s), which starves a file-polling VAD.

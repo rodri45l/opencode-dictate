@@ -32,7 +32,8 @@ describe("pickRecorder", () => {
       recorder.cmd === "timeout" ||
       recorder.args.includes("-t") ||
       recorder.args.includes("-d") ||
-      recorder.args.includes("trim")
+      recorder.args.includes("trim") ||
+      recorder.args.includes("--seconds")
     expect(bounded).toBe(true)
   })
 
@@ -43,7 +44,8 @@ describe("pickRecorder", () => {
     const recorder = pickRecorder(config, 0.5)
     if (!recorder) return
     const args = recorder.cmd === "timeout" ? recorder.args.slice(3) : recorder.args
-    const streams = args.includes("-") || args.includes("--raw")
+    const streams =
+      args.includes("-") || args.includes("--raw") || args[0]?.endsWith("opencode-dictate-recorder") === true || recorder.cmd.endsWith("opencode-dictate-recorder")
     expect(streams).toBe(true)
     expect(args.some((a) => a.endsWith(".wav"))).toBe(false)
   })

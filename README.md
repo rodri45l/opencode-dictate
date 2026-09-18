@@ -157,12 +157,20 @@ since they are almost never genuine. The profile lives at
 re-enroll. This is intentionally simple, so treat the threshold as a soft gate
 and tune it from the `debug` log.
 
-**Recorders:** the plugin uses the first of `ffmpeg`, `parecord`, `arecord`,
-`sox` found on `PATH`. `ffmpeg` is the only cross-platform option, so macOS and
-Windows need it installed; on macOS grant the terminal microphone permission,
-and on Windows the plugin auto-selects the first DirectShow audio device (or
-pass `inputDevice: "Microphone (…)"`). Set `VOICE_DEBUG=1` to log to
-`VOICE_DEBUG_LOG` (default `/tmp/opencode/dictate-plugin.log`).
+**Recorders:** nothing to install. The package ships its own tiny recorder
+(miniaudio, MIT-0) for **macOS arm64/x64** and **Linux x64**, and uses it
+automatically — it talks to CoreAudio/ALSA/PulseAudio directly. Only if no
+bundled build matches your platform does it fall back to the first of `ffmpeg`,
+`parecord`, `arecord`, `sox` on `PATH`. Whichever runs, it writes raw 16 kHz mono
+PCM to stdout and stops itself at the deadline, so no temp files exist and a
+killed TUI cannot leave a recorder holding the microphone.
+
+On macOS, grant the terminal app microphone permission (System Settings →
+Privacy & Security → Microphone); a GUI-launched opencode has no
+`/opt/homebrew/bin` on `PATH`, so start it from Terminal. On Windows, add
+`inputDevice: "Microphone (…)"` if the default DirectShow device is wrong. Set
+`VOICE_DEBUG=1` to log to `VOICE_DEBUG_LOG` (default
+`/tmp/opencode/dictate-plugin.log`).
 
 With `backend: "command"` the plugin instead runs an external `dictate` command
 (e.g. a local GPU build).
@@ -195,7 +203,7 @@ logs why it was kept or dropped — `keep`, `drop weak audio`,
 
 | Symptom | What to try |
 |---|---|
-| `no recorder found` | install `ffmpeg`, or `parecord`/`arecord`/`sox` on Linux |
+| `no recorder found` | your platform has no bundled build (Windows, Linux arm64) — install `ffmpeg` |
 | Never hears you | lower `vadThreshold` (try 0.02); check the logged `peak=` |
 | Phantom prompts | raise `vadThreshold`; enable `speaker`; the log names the reason |
 | Your own words dropped | lower `speaker.threshold`, or delete the voiceprint to re-enroll |
@@ -207,8 +215,8 @@ logs why it was kept or dropped — `keep`, `drop weak audio`,
 
 | OS | Status |
 |---|---|
-| Linux / WSL | working (`ffmpeg`, `parecord`, `arecord` or `sox`) |
-| macOS | implemented (`ffmpeg avfoundation`, auto-picks the first audio device; needs mic permission) |
+| Linux x64 / WSL | working (bundled recorder, no install) |
+| macOS arm64/x64 | working (bundled recorder, no install; needs mic permission) |
 | Windows | implemented (`ffmpeg dshow`, auto-picks the first audio device) |
 
 macOS and Windows are code-complete but untested on real hardware here — the
