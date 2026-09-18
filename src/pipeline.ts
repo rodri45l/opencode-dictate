@@ -5,7 +5,7 @@ import { type VoiceConfig } from "./config"
 import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
-import { isArtifact, isSilenceHallucination, isWeakSpeech } from "./hallucination"
+import { isArtifact, isSilenceHallucination, isWeakSpeech, isWordless } from "./hallucination"
 import { isImplausibleRate, learnRate, loadRate, rateLimit, saveRate } from "./rate"
 import { enroll, loadProfile, saveProfile, similarity } from "./voiceprint"
 
@@ -34,6 +34,11 @@ export async function listen(
     `voiced=${captured.voicedMs}ms peak=${captured.loudest.toFixed(3)} ` +
     `pitch=${captured.periodicity.toFixed(2)} clip=${captured.clipped.toFixed(3)} ` +
     `gain=${captured.gain.toFixed(3)}`
+  // Noise that produced no words at all — nothing to send, whoever said it.
+  if (isWordless(raw)) {
+    options.log?.(`drop wordless transcript (${stats}) transcript="${raw}"`)
+    return ""
+  }
   // The mic never clearly heard speech, so whatever the model said is made up.
   // This catches hallucinations the phrase list cannot know about.
   if (isWeakSpeech(captured, config.vadThreshold * 1.5)) {

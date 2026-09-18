@@ -34,7 +34,7 @@ watch a little status scanner react to your voice — no keyboard required.
 ## Install
 
 ```bash
-opencode plugin opencode-dictate@beta -g     # installs the package and updates tui.json
+opencode plugin opencode-dictate -g          # installs the package and updates tui.json
 ```
 
 Then restart opencode. The first start takes a few seconds while the package is
@@ -47,13 +47,12 @@ To configure it, turn that entry into a `[spec, options]` tuple in
 {
   "$schema": "https://opencode.ai/tui.json",
   "plugin": [
-    ["opencode-dictate@beta", { "stt": "http://127.0.0.1:8080/v1" }]
+    ["opencode-dictate", { "stt": "http://127.0.0.1:8080/v1" }]
   ]
 }
 ```
 
-During the beta the package is published under the `beta` dist-tag so `latest`
-stays untouched — ask for `opencode-dictate@beta` explicitly.
+Prereleases are published under the `beta` dist-tag (`opencode-dictate@beta`).
 
 > Listing the same package in `opencode.json` works too (it resolves against the
 > host runtime); `tui.json` is the conventional place for TUI plugins.
@@ -123,7 +122,7 @@ commands reuse the LLM opencode is already configured with. Configure it in
 | `vadThreshold` | peak amplitude that counts as voice; raise it in a noisy room (default 0.03) |
 | `inputGain` / `autoGain` | fixed gain 0..1, or let the plugin trim a hot mic itself (default auto) |
 | `speaker` | `{ enabled, threshold, artifactThreshold, minSamples }` — MFCC voiceprint gate (defaults 0.8 / 0.9 / 8) |
-| `inputDevice` | recorder device override (e.g. an avfoundation index) |
+| `inputDevice` | microphone override: a name substring (e.g. `"AirPods"`) or an index (`":1"`); omit for the OS default |
 | `debug` | write a debug log (same as `VOICE_DEBUG=1`) |
 
 Environment variables (`VOICE_STT_URL`, `VOICE_LLM_URL`, `VOICE_SILENCE_MS`, …)
@@ -164,6 +163,17 @@ bundled build matches your platform does it fall back to the first of `ffmpeg`,
 `parecord`, `arecord`, `sox` on `PATH`. Whichever runs, it writes raw 16 kHz mono
 PCM to stdout and stops itself at the deadline, so no temp files exist and a
 killed TUI cannot leave a recorder holding the microphone.
+
+**Choosing the microphone.** By default the plugin uses whatever the OS currently
+treats as the default input, and it re-resolves that for **every** utterance — so
+plugging in a headset mid-session is picked up on your next sentence without a
+restart. To pin a specific device, set `inputDevice` to a name substring (safer:
+indices are renumbered when devices come and go) or to an exact index. List the
+names on your machine with:
+
+```bash
+node_modules/opencode-dictate/bin/$(uname -s | tr 'A-Z' 'a-z')-*/opencode-dictate-recorder --list
+```
 
 On macOS, grant the terminal app microphone permission (System Settings →
 Privacy & Security → Microphone); a GUI-launched opencode has no

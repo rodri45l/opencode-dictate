@@ -66,6 +66,15 @@ export function normalizeTranscript(text: string): string {
 }
 
 /**
+ * True when a transcript has no words at all — "." or "…" alone. Whisper emits
+ * these for noise, they are never dictation, and the speaking-rate guard cannot
+ * see them because it only inspects transcripts that contain words.
+ */
+export function isWordless(text: string): boolean {
+  return normalizeTranscript(text).length === 0
+}
+
+/**
  * True when a transcript looks like a silence artifact and the audio it came
  * from was too weak to plausibly be that phrase.
  */

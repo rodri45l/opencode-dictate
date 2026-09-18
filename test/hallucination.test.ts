@@ -3,6 +3,7 @@ import {
   isArtifact,
   isSilenceHallucination,
   isWeakSpeech,
+  isWordless,
   normalizeTranscript,
   WEAK_PEAK,
   WEAK_VOICED_MS,
@@ -108,3 +109,18 @@ describe("isWeakSpeech", () => {
   })
 })
 
+
+describe("isWordless", () => {
+  test("drops punctuation-only noise the model invented", () => {
+    expect(isWordless(".")).toBe(true)
+    expect(isWordless("…")).toBe(true)
+    expect(isWordless(" - ")).toBe(true)
+    expect(isWordless("")).toBe(true)
+  })
+
+  test("keeps anything with a real word in it", () => {
+    expect(isWordless("you")).toBe(false)
+    expect(isWordless("Thank you.")).toBe(false)
+    expect(isWordless("ok")).toBe(false)
+  })
+})

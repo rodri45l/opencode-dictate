@@ -237,9 +237,14 @@ export function bundledRecorder(config: CaptureConfig, gain: number): Recorder |
   if (!existsSync(path)) return null
   // It stops itself, so no external deadline wrapper is needed.
   const args = ["--seconds", (config.maxMs / 1000).toFixed(0), "--gain", gain.toFixed(2)]
+  // Device is optional: without it the recorder uses whatever the OS currently
+  // treats as the default input, re-resolved on every capture — so plugging in a
+  // microphone mid-session just works. An override may be an index (":1" or "1")
+  // or a name substring, and a name is safer because indices get renumbered.
   const device = config.inputDevice?.trim()
   const index = device?.startsWith(":") ? device.slice(1) : device
   if (index && /^\d+$/.test(index)) args.push("--device-index", index)
+  else if (device) args.push("--device-name", device)
   return { cmd: path, args }
 }
 

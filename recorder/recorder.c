@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 static ma_device g_device;
 static ma_uint64 g_target = 0; // frames at 16 kHz
@@ -60,6 +61,29 @@ static void on_signal(int sig)
   _exit(0);
 }
 
+// Find a capture device whose name contains `needle` (case-insensitive). Names
+// are stable where indices are not: plugging in AirPods renumbers them, which
+// silently moves a pinned index onto the wrong microphone.
+static int find_device_by_name(ma_context *context, const char *needle)
+{
+  ma_device_info *playback;
+  ma_uint32 playback_count;
+  ma_device_info *capture;
+  ma_uint32 capture_count;
+  if (ma_context_get_devices(context, &playback, &playback_count, &capture, &capture_count) != MA_SUCCESS)
+    return -1;
+  for (ma_uint32 i = 0; i < capture_count; i++) {
+    const char *name = capture[i].name;
+    size_t n = strlen(needle);
+    for (const char *p = name; *p; p++) {
+      size_t k = 0;
+      while (k < n && p[k] && tolower((unsigned char)p[k]) == tolower((unsigned char)needle[k])) k++;
+      if (k == n) return (int)i;
+    }
+  }
+  return -1;
+}
+
 static void list_devices(void)
 {
   ma_context context;
@@ -83,12 +107,14 @@ int main(int argc, char **argv)
   ma_uint32 rate = 16000;
   double seconds = 60.0;
   int device_index = -1;
+  const char *device_name = NULL;
 
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = atof(argv[++i]);
     else if (!strcmp(argv[i], "--gain") && i + 1 < argc) g_gain = atof(argv[++i]);
     else if (!strcmp(argv[i], "--rate") && i + 1 < argc) rate = (ma_uint32)atoi(argv[++i]);
     else if (!strcmp(argv[i], "--device-index") && i + 1 < argc) device_index = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--device-name") && i + 1 < argc) device_name = argv[++i];
     else if (!strcmp(argv[i], "--list")) { list_devices(); return 0; }
   }
   g_target = (ma_uint64)(seconds * (double)rate);
@@ -100,6 +126,18 @@ int main(int argc, char **argv)
   }
 
   ma_device_id *chosen = NULL;
+  if (device_name) {
+    int found = find_device_by_name(&context, device_name);
+    if (found < 0) {
+      fprintf(stderr, "no capture device matching \"%s\"; available:\n", device_name);
+      ma_device_info *pb; ma_uint32 pbc; ma_device_info *cap; ma_uint32 cc;
+      if (ma_context_get_devices(&context, &pb, &pbc, &cap, &cc) == MA_SUCCESS)
+        for (ma_uint32 i = 0; i < cc; i++) fprintf(stderr, "  [%u] %s\n", i, cap[i].name);
+      ma_context_uninit(&context);
+      return 2;
+    }
+    device_index = found;
+  }
   if (device_index >= 0) {
     ma_device_info *playback;
     ma_uint32 playback_count;
