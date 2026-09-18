@@ -77,9 +77,9 @@ const GREEN = "#9CAF8B"
 const YELLOW = "#E5C07B"
 const AMBER = "#E0A64B"
 const IDLE = "#4E545A"
-// Muted: grey already means "listening but silent", so mute gets its own hue —
-// a calm blue — and a scanner that stops moving. Both together are unmistakable.
-const MUTED = "#4A6FA5"
+// Muted: grey already means "listening but silent", and orange/amber is
+// transcribing, so mute takes violet — the one hue no other state uses.
+const MUTED = "#8A6FD6"
 // Scanner flash shown for a moment after a spoken stop.
 const ALERT = "#FFFFFF"
 
@@ -509,11 +509,15 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       return `#${rgb.map((v) => Math.round(v * k).toString(16).padStart(2, "0")).join("")}`
     }
     const cells = () => {
-      // Muted: the sweep stops. A still bar in the mute colour reads as "off"
-      // rather than "waiting", which the moving grey bar already means.
+      // Muted: the sweep parks dead centre, keeping its gradient and tail —
+      // recognisably the scanner, just stopped.
       if (props.frozen) {
+        const pos = (WIDTH - 1) / 2
         const still: JSX.Element[] = []
-        for (let i = 0; i < WIDTH; i++) still.push(<span style={{ fg: shade(0.45) }}>{"█"}</span>)
+        for (let i = 0; i < WIDTH; i++) {
+          const level = Math.max(0, 1 - Math.abs(i - pos) / TAIL)
+          still.push(<span style={{ fg: shade(level) }}>{"█"}</span>)
+        }
         return still
       }
       // Alert: the whole bar pulses together (a strobe), which reads very
