@@ -34,16 +34,9 @@ watch a little status scanner react to your voice — no keyboard required.
 
 It sits just above the prompt, and it is the whole user interface:
 
-```
- scanner (f7)                               wave (f7)
-   ░▒▓█▓▒░░░░░░░   ← the sweep travels           ▁▃▅▂▇█▅▃▁▃▅▇▂▁▅   ← bars follow your voice
-   ░░░░▒▓█▓▒░░░░   ← muted: parks, dimmed        ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁   ← muted: a flat line
-```
-
-They say the same thing in two ways: the **scanner** is a bright hump that travels
-along the bar (it shows where it is listening), the **wave** is bars whose height
-follows your loudness. Both use the colours below — muted keeps the shape but drops
-to violet, and the scanner stops mid-bar.
+Two styles, switched with `f7`: a **KITT-style scanner** (a bright sweep that
+travels along the bar) and an **amplitude wave** (bars that follow your loudness).
+The colour tells you what is happening:
 
 | Colour | Meaning |
 |---|---|
