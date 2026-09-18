@@ -1,18 +1,17 @@
 // Speech-to-text against any OpenAI-compatible /audio/transcriptions endpoint
 // (a local whisper.cpp/faster-whisper server, or a cloud provider).
 
-import { readFileSync } from "node:fs"
 import type { SttConfig } from "./config"
 
 function endpoint(url: string): string {
   return url.includes("/audio/transcriptions") ? url : `${url}/audio/transcriptions`
 }
 
-export async function transcribe(wavPath: string, stt: SttConfig): Promise<string> {
-  const audio = readFileSync(wavPath)
+/** Upload an in-memory WAV; capture never writes a file, so neither do we. */
+export async function transcribe(wav: Buffer, stt: SttConfig): Promise<string> {
   const form = new FormData()
   form.append("model", stt.model)
-  form.append("file", new Blob([audio], { type: "audio/wav" }), "utterance.wav")
+  form.append("file", new Blob([wav], { type: "audio/wav" }), "utterance.wav")
 
   const response = await fetch(endpoint(stt.url), {
     method: "POST",

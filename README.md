@@ -174,7 +174,9 @@ See `servers/faster-whisper/` for a dependency-free local STT server.
 The plugin is a thin TUI layer that orchestrates two pluggable pieces:
 
 ```
-plugin:  capture (local recorder) + VAD (endpointing) + cleanup + loop + UI
+plugin:  capture (recorder stream) + VAD (endpointing) + cleanup + loop + UI
+         — 16 kHz PCM read from the recorder's stdout and assembled in memory,
+           so no temp files exist and the level is live on every platform
          └── audio -> transcript   (local whisper server | cloud API)
 ```
 
@@ -198,7 +200,8 @@ logs why it was kept or dropped — `keep`, `drop weak audio`,
 | Phantom prompts | raise `vadThreshold`; enable `speaker`; the log names the reason |
 | Your own words dropped | lower `speaker.threshold`, or delete the voiceprint to re-enroll |
 | Hears other people | enable `speaker` and keep `threshold` at 0.8 or above |
-| A recorder left running | can't happen indefinitely: each recorder carries its own deadline (~63s) and stale temp files are swept on the next capture |
+| A recorder left running | can't happen indefinitely: each recorder carries its own deadline (~63s) and exiting the TUI kills whatever is live |
+| Nothing is transcribed on macOS | the recorder must be found on `PATH` — a GUI-launched app has no `/opt/homebrew/bin`, so start opencode from Terminal |
 
 ## Cross-platform
 

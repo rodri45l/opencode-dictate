@@ -1,19 +1,20 @@
 // Cross-platform microphone capture with endpointing.
 //
 // Terminals have no native mic API, so we drive a recorder subprocess (ffmpeg,
-// parecord, arecord or sox — whichever is installed) writing a 16 kHz mono WAV.
-// We watch the growing file: the PCM gives us the live level, and a simple
-// energy VAD decides where the utterance ends. Recording lives in *our* event
-// loop, so one bad recorder can never spin the TUI.
+// parecord, arecord or sox — whichever is installed) and read 16 kHz mono PCM
+// from its stdout. Streaming matters: ffmpeg on macOS buffers *file* output in
+// ~256 KB blocks, so a VAD polling the file sees nothing for the first ~8 seconds
+// of every capture (found on the macOS test — the indicator stayed grey while the
+// mic was fine). Reading the pipe streams in real time, and nothing touches disk.
+// Recording lives in *our* event loop, so one bad recorder can never spin the TUI.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { existsSync } from "node:fs"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
 import { adaptGain, CLIP_DETECT, loadGain, MAX_GAIN, saveGain } from "./gain"
 import { voiceprint } from "./mfcc"
-import { clippingRatio, decodePcm, meterLevel, periodicity } from "./speech"
+import { clippingRatio, decodePcm, meterLevel, periodicity, wavFromPcm } from "./speech"
 import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
 
 export interface CaptureHandlers {
@@ -22,7 +23,8 @@ export interface CaptureHandlers {
 }
 
 export interface CaptureResult {
-  wavPath: string
+  /** The utterance as a WAV, assembled in memory — no temp file anywhere. */
+  wav: Buffer
   hadSpeech: boolean
   /** Stats kept for the hallucination guard downstream. */
   voicedMs: number
@@ -56,13 +58,10 @@ export interface CaptureConfig {
 const RATE = 16_000
 const TICK_MS = 80
 const WAV_HEADER = 44
-const TEMP_PREFIX = "opencode-dictate-"
-/**
- * Temp WAVs older than this were left by a run that died mid-capture and could
- * not unlink them. A live utterance is hard-capped at maxMs (60s) plus the
- * recorder's deadline, so anything past two minutes is certainly garbage.
- */
-const STALE_MS = 2 * 60_000
+/** Bytes of 16-bit mono audio in one VAD tick (80 ms). */
+const TICK_BYTES = Math.round((TICK_MS / 1000) * RATE) * 2
+/** Windows drained per tick: macOS delivers ~1.4 s at a time, so we must catch up. */
+const MAX_WINDOWS_PER_TICK = 25
 /** Grace period after a capture's own deadline before we force it to stop. */
 const WATCHDOG_SLACK_MS = 5_000
 
@@ -110,24 +109,7 @@ export function stopActiveRecorders(): void {
   for (const child of [...live]) killRecorder(child)
 }
 
-/** Delete temp WAVs an earlier crashed run never cleaned up. */
-function sweepStaleTemps(): void {
-  const dir = tmpdir()
-  const cutoff = Date.now() - STALE_MS
-  try {
-    for (const name of readdirSync(dir)) {
-      if (!name.startsWith(TEMP_PREFIX) || !name.endsWith(".wav")) continue
-      const path = join(dir, name)
-      try {
-        if (statSync(path).mtimeMs < cutoff) rmSync(path, { force: true })
-      } catch {
-        // vanished under us
-      }
-    }
-  } catch {
-    // unreadable tmpdir — nothing to sweep
-  }
-}
+
 
 export function which(bin: string): boolean {
   // path.delimiter, not ":" — Windows PATH entries contain a drive colon, and
@@ -234,9 +216,12 @@ export function withDeadline(recorder: Recorder, maxSec: string, hasTimeout = wh
   return { cmd: "timeout", args: ["-k", "3", maxSec, recorder.cmd, ...recorder.args] }
 }
 
-export function pickRecorder(config: CaptureConfig, wavPath: string, gain: number): Recorder | null {
+export function pickRecorder(config: CaptureConfig, gain: number): Recorder | null {
   const maxSec = (config.maxMs / 1000).toFixed(0)
   const factor = gain.toFixed(2)
+  // Every recorder writes raw 16-bit mono PCM to stdout, never to a file: a pipe
+  // streams immediately on every platform, while ffmpeg on macOS flushes file
+  // output in ~256 KB blocks (≈8 s), which starves a file-polling VAD.
   if (which("ffmpeg")) {
     return {
       cmd: "ffmpeg",
@@ -253,85 +238,48 @@ export function pickRecorder(config: CaptureConfig, wavPath: string, gain: numbe
         String(RATE),
         "-t",
         maxSec,
-        "-y",
-        wavPath,
+        "-f",
+        "s16le",
+        "-",
       ],
     }
   }
   // PulseAudio / ALSA recorders (Linux, incl. WSLg). parecord takes linear gain
-  // 0..65536, so we can keep a hot RDP microphone out of clipping before it is
-  // written; arecord has no gain option.
+  // 0..65536, so a hot RDP microphone is kept out of clipping before it is read;
+  // arecord has no gain option.
   if (which("parecord")) {
-    // parecord has no duration option, so the deadline comes from the wrapper.
+    // --raw with no file writes to stdout; parecord has no duration option, so
+    // the deadline comes from the wrapper.
     return withDeadline(
       {
         cmd: "parecord",
-        args: [
-          "--format=s16le",
-          `--rate=${RATE}`,
-          "--channels=1",
-          `--volume=${Math.round(gain * 65536)}`,
-          "--file-format=wav",
-          wavPath,
-        ],
+        args: ["--raw", "--format=s16le", `--rate=${RATE}`, "--channels=1", `--volume=${Math.round(gain * 65536)}`],
       },
       maxSec,
     )
   }
   if (which("arecord")) {
-    // -d is arecord's own duration in seconds; -t selects the file type.
-    return { cmd: "arecord", args: ["-f", "S16LE", "-r", String(RATE), "-c", "1", "-t", "wav", "-d", maxSec, wavPath] }
+    // -t raw with "-" streams to stdout; -d is arecord's own deadline.
+    return { cmd: "arecord", args: ["-f", "S16LE", "-r", String(RATE), "-c", "1", "-t", "raw", "-d", maxSec, "-"] }
   }
   if (which("sox")) {
-    // "trim 0 <sec>" ends the recording after the deadline.
-    return {
-      cmd: "sox",
-      args: ["-d", "-c", "1", "-r", String(RATE), "-t", "wav", wavPath, "trim", "0", maxSec, "vol", factor],
-    }
+    // "-" streams to stdout; "trim 0 <sec>" ends it at the deadline.
+    return { cmd: "sox", args: ["-d", "-c", "1", "-r", String(RATE), "-t", "raw", "-", "trim", "0", maxSec, "vol", factor] }
   }
   return null
-}
-
-/** Read new 16-bit samples from the growing WAV and return the peak (0..1). */
-function drainPeak(path: string, offset: number): { peak: number; next: number } {
-  let size = 0
-  try {
-    size = statSync(path).size
-  } catch {
-    return { peak: 0, next: offset }
-  }
-  if (size <= offset || size <= WAV_HEADER) return { peak: 0, next: offset }
-  const length = Math.min(size - offset, 128_000)
-  const buffer = Buffer.alloc(length)
-  const fd = openSync(path, "r")
-  try {
-    readSync(fd, buffer, 0, length, offset)
-  } finally {
-    closeSync(fd)
-  }
-  let peak = 0
-  for (let i = 0; i + 1 < buffer.length; i += 2) {
-    const amp = Math.abs(buffer.readInt16LE(i)) / 32768
-    if (amp > peak) peak = amp
-  }
-  return { peak, next: offset + length }
 }
 
 export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promise<CaptureResult> {
   ensureAudioEnvironment()
   armReaper()
-  sweepStaleTemps()
-  const wavPath = join(tmpdir(), `${TEMP_PREFIX}${Date.now()}.wav`)
   // A fixed gain wins; otherwise trim automatically so a hot mic never clips.
   // An explicit setting is honoured rather than clamped up to the adaptive
   // floor: a very hot source needs far more attenuation than the floor allows,
   // and rounding 0.02 up to 0.05 silently defeated the option.
   const fixed =
-    typeof config.inputGain === "number"
-      ? Math.min(MAX_GAIN, Math.max(0.005, config.inputGain))
-      : undefined
+    typeof config.inputGain === "number" ? Math.min(MAX_GAIN, Math.max(0.005, config.inputGain)) : undefined
   const gain = fixed ?? (config.autoGain === false ? 1 : loadGain())
-  const recorder = pickRecorder(config, wavPath, gain)
+  const recorder = pickRecorder(config, gain)
   if (!recorder) {
     const hint =
       process.platform === "linux"
@@ -341,7 +289,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
   }
 
   return new Promise<CaptureResult>((resolve, reject) => {
-    const child = spawn(recorder.cmd, recorder.args, { stdio: ["ignore", "ignore", "pipe"] })
+    const child = spawn(recorder.cmd, recorder.args, { stdio: ["ignore", "pipe", "pipe"] })
     live.add(child)
     handlers.onPhase("recording")
 
@@ -353,9 +301,22 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       startTimeoutMs: config.startTimeoutMs,
       maxMs: config.maxMs,
     }
-    let offset = WAV_HEADER
+
+    const chunks: Buffer[] = []
+    let pending: Buffer = Buffer.alloc(0)
     let state = initialVadState()
     let stopped = false
+    let errorText = ""
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      chunks.push(chunk)
+      pending = pending.length === 0 ? chunk : Buffer.concat([pending, chunk])
+    })
+    // Keep the recorder's own complaint: without it a failure is invisible, and
+    // "no audio" looks identical to a quiet room.
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (errorText.length < 2_048) errorText += chunk.toString()
+    })
 
     const finish = () => {
       if (stopped) return
@@ -363,6 +324,14 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       clearInterval(timer)
       clearTimeout(watchdog)
       killRecorder(child)
+
+      const raw = Buffer.concat(chunks)
+      if (raw.length === 0 && errorText.trim()) {
+        reject(new Error(`recorder produced no audio (${recorder.cmd}): ${errorText.trim()}`))
+        return
+      }
+
+      const wav = wavFromPcm(raw, RATE)
       // A single loud tick (a cough, a door, headphone bleed) is not speech:
       // hadSpeech also requires enough voiced audio, so noise never reaches
       // Whisper (which would otherwise invent a sentence).
@@ -371,7 +340,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       let clipped = 0
       let print: Float32Array | null = null
       try {
-        const samples = decodePcm(readFileSync(wavPath), WAV_HEADER)
+        const samples = decodePcm(wav, WAV_HEADER)
         clipped = clippingRatio(samples)
         if (spoken) {
           strength = periodicity(samples, RATE)
@@ -386,7 +355,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
         if (Math.abs(next - gain) > 1e-6) saveGain(next)
       }
       resolve({
-        wavPath,
+        wav,
         hadSpeech: spoken,
         voicedMs: state.voicedMs,
         loudest: state.loudest,
@@ -397,19 +366,45 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
       })
     }
 
-    const timer = setInterval(() => {
-      const { peak, next } = drainPeak(wavPath, offset)
-      offset = next
-      handlers.onLevel(meterLevel(peak))
-
+    const tick = (peak: number): boolean => {
       const step = vadStep(state, peak, TICK_MS, vadConfig)
       state = step.state
       for (const event of step.events) handlers.onPhase(event)
+      return state.done
+    }
+
+    const timer = setInterval(() => {
+      // Drain whole 80 ms windows. A recorder can deliver ~1.4 s at once, so
+      // catching up keeps the VAD in step with real time.
+      let windows = 0
+      let lastPeak = 0
+      while (windows < MAX_WINDOWS_PER_TICK && pending.length >= TICK_BYTES) {
+        const slice = pending.subarray(0, TICK_BYTES)
+        pending = pending.subarray(TICK_BYTES)
+        let peak = 0
+        for (let i = 0; i + 1 < slice.length; i += 2) {
+          const amp = Math.abs(slice.readInt16LE(i)) / 32768
+          if (amp > peak) peak = amp
+        }
+        lastPeak = peak
+        windows += 1
+        if (tick(peak)) {
+          handlers.onLevel(meterLevel(peak))
+          finish()
+          return
+        }
+      }
+      if (windows === 0) {
+        // Nothing arrived this tick: advance as silence so the start timeout and
+        // end-of-speech logic still run when a recorder stalls.
+        tick(0)
+      }
+      handlers.onLevel(meterLevel(lastPeak))
       if (state.done) finish()
     }, TICK_MS)
 
     // Belt and braces: if the tick loop ever stops making progress, stop anyway
-    // rather than holding the microphone and writing an ever-growing file.
+    // rather than holding the microphone.
     const watchdog = setTimeout(finish, config.maxMs + WATCHDOG_SLACK_MS)
     watchdog.unref?.()
 

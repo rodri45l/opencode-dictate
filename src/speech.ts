@@ -100,3 +100,23 @@ export function decodePcm(buffer: Buffer, headerBytes: number): Float32Array {
   for (let i = 0; i < count; i++) samples[i] = buffer.readInt16LE(headerBytes + i * 2) / 32768
   return samples
 }
+
+/** Wrap raw 16-bit PCM in a minimal WAV container, for upload to the STT API. */
+export function wavFromPcm(pcm: Buffer, rate = 16_000, channels = 1): Buffer {
+  const header = Buffer.alloc(44)
+  const byteRate = rate * channels * 2
+  header.write("RIFF", 0)
+  header.writeUInt32LE(36 + pcm.length, 4)
+  header.write("WAVE", 8)
+  header.write("fmt ", 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20) // PCM
+  header.writeUInt16LE(channels, 22)
+  header.writeUInt32LE(rate, 24)
+  header.writeUInt32LE(byteRate, 28)
+  header.writeUInt16LE(channels * 2, 32) // block align
+  header.writeUInt16LE(16, 34) // bits per sample
+  header.write("data", 36)
+  header.writeUInt32LE(pcm.length, 40)
+  return Buffer.concat([header, pcm])
+}

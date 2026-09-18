@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { clippingRatio, decodePcm, meterLevel, periodicity } from "../src/speech"
+import { clippingRatio, decodePcm, meterLevel, periodicity, wavFromPcm } from "../src/speech"
 
 const RATE = 16_000
 
@@ -95,5 +95,30 @@ describe("meterLevel", () => {
   test("clamps at full scale and rises with loudness", () => {
     expect(meterLevel(1)).toBe(1)
     expect(meterLevel(0.05)).toBeLessThan(meterLevel(0.2))
+  })
+})
+
+describe("wavFromPcm", () => {
+  test("wraps raw PCM in a valid 16-bit mono WAV header", () => {
+    const pcm = Buffer.alloc(3200, 1)
+    const wav = wavFromPcm(pcm, 16_000, 1)
+    expect(wav.length).toBe(44 + pcm.length)
+    expect(wav.toString("ascii", 0, 4)).toBe("RIFF")
+    expect(wav.toString("ascii", 8, 12)).toBe("WAVE")
+    expect(wav.readUInt16LE(20)).toBe(1) // PCM
+    expect(wav.readUInt16LE(22)).toBe(1) // mono
+    expect(wav.readUInt32LE(24)).toBe(16_000)
+    expect(wav.readUInt16LE(34)).toBe(16) // bits per sample
+    expect(wav.readUInt32LE(40)).toBe(pcm.length) // data size
+    expect(wav.readUInt32LE(4)).toBe(36 + pcm.length) // riff size
+  })
+
+  test("decodes back to the original samples", () => {
+    const pcm = Buffer.alloc(8)
+    pcm.writeInt16LE(1234, 0)
+    pcm.writeInt16LE(-1234, 2)
+    const samples = decodePcm(wavFromPcm(pcm), 44)
+    expect(samples[0]).toBeCloseTo(1234 / 32768, 6)
+    expect(samples[1]).toBeCloseTo(-1234 / 32768, 6)
   })
 })

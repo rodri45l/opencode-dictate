@@ -26,7 +26,7 @@ describe("pickRecorder", () => {
   // Whichever recorder this machine has, it must be unable to outlive the
   // utterance — otherwise a killed TUI leaves it holding the microphone.
   test("always returns a recorder that can stop itself", () => {
-    const recorder = pickRecorder(config, "/tmp/dictate-recorder-test.wav", 0.5)
+    const recorder = pickRecorder(config, 0.5)
     if (!recorder) return
     const bounded =
       recorder.cmd === "timeout" ||
@@ -34,5 +34,17 @@ describe("pickRecorder", () => {
       recorder.args.includes("-d") ||
       recorder.args.includes("trim")
     expect(bounded).toBe(true)
+  })
+
+  // Capture reads PCM from stdout, never from a file: ffmpeg on macOS buffers
+  // file output in ~256 KB blocks, which leaves a file-polling VAD blind for the
+  // first ~8 seconds of every utterance.
+  test("streams raw PCM to stdout and never writes a file", () => {
+    const recorder = pickRecorder(config, 0.5)
+    if (!recorder) return
+    const args = recorder.cmd === "timeout" ? recorder.args.slice(3) : recorder.args
+    const streams = args.includes("-") || args.includes("--raw")
+    expect(streams).toBe(true)
+    expect(args.some((a) => a.endsWith(".wav"))).toBe(false)
   })
 })
