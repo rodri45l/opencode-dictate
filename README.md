@@ -25,7 +25,7 @@ watch a little status scanner react to your voice — no keyboard required.
 
 ## Requirements
 
-- opencode with TUI plugin support (`plugin` in `tui.json`).
+- opencode with TUI plugin support (a `plugin` entry in `opencode.json`).
 - A **speech-to-text backend** (see below) — local or cloud.
 - An **OpenAI-compatible LLM** for transcript cleanup + control sentinels
   (optional but recommended; without it, raw transcripts are used and voice
@@ -33,21 +33,50 @@ watch a little status scanner react to your voice — no keyboard required.
 
 ## Install
 
-```bash
-opencode plugin opencode-dictate -g      # installs the npm package and updates config
-```
-
-or add it to `~/.config/opencode/tui.json`:
+Add the package to **`~/.config/opencode/opencode.json`** — the plugin list lives
+in the server config, not `tui.json`. opencode installs it with Bun at startup.
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-dictate"]
+  "plugin": ["opencode-dictate@beta"]
+}
+```
+
+Options go in the tuple form, exactly as with any other plugin:
+
+```json
+{
+  "plugin": [
+    ["opencode-dictate@beta", { "stt": "http://127.0.0.1:8080/v1" }]
+  ]
 }
 ```
 
 During the beta the package is published under the `beta` dist-tag so `latest`
-stays untouched — install `opencode-dictate@beta` explicitly.
+stays untouched — ask for `opencode-dictate@beta` explicitly.
+
+> **Note:** `opencode plugin opencode-dictate@beta` records the entry in
+> `tui.json`, which opencode 1.18.x does *not* load plugins from — add it to
+> `opencode.json` yourself. `tui.json` is only for local file plugins (below).
+
+### From local files (development)
+
+Copy the sources into your config directory and point `tui.json` at the file:
+
+```bash
+mkdir -p ~/.config/opencode/tui-plugins/opencode-dictate
+cp src/* ~/.config/opencode/tui-plugins/opencode-dictate/
+```
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": ["./tui-plugins/opencode-dictate/index.tsx"]
+}
+```
+
+This is also the fastest way to iterate on the plugin itself.
 
 ## Controls
 
@@ -64,7 +93,7 @@ All four are also in the command palette. `<leader>` is opencode's leader key.
 
 You only need to point the plugin at **speech-to-text** — cleanup and voice
 commands reuse the LLM opencode is already configured with. Configure it in
-`tui.json` via plugin options:
+`opencode.json` via plugin options:
 
 ```json
 {
