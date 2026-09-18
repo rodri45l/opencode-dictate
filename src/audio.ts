@@ -11,7 +11,7 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, r
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { ensureAudioEnvironment } from "./detect"
-import { adaptGain, clampGain, CLIP_DETECT, loadGain, saveGain } from "./gain"
+import { adaptGain, CLIP_DETECT, loadGain, MAX_GAIN, saveGain } from "./gain"
 import { voiceprint } from "./mfcc"
 import { clippingRatio, decodePcm, meterLevel, periodicity } from "./speech"
 import { hadSpeech, initialVadState, SILENCE_HANGOVER_MS, vadStep, type VadConfig } from "./vad"
@@ -31,6 +31,8 @@ export interface CaptureResult {
   periodicity: number
   /** Share of samples at full scale; a mic knock saturates the input. */
   clipped: number
+  /** Input gain applied to this capture, so the log can explain the levels. */
+  gain: number
   /** MFCC voiceprint, only computed when speaker verification is enabled. */
   print: Float32Array | null
 }
@@ -321,7 +323,13 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
   sweepStaleTemps()
   const wavPath = join(tmpdir(), `${TEMP_PREFIX}${Date.now()}.wav`)
   // A fixed gain wins; otherwise trim automatically so a hot mic never clips.
-  const fixed = typeof config.inputGain === "number" ? clampGain(config.inputGain) : undefined
+  // An explicit setting is honoured rather than clamped up to the adaptive
+  // floor: a very hot source needs far more attenuation than the floor allows,
+  // and rounding 0.02 up to 0.05 silently defeated the option.
+  const fixed =
+    typeof config.inputGain === "number"
+      ? Math.min(MAX_GAIN, Math.max(0.005, config.inputGain))
+      : undefined
   const gain = fixed ?? (config.autoGain === false ? 1 : loadGain())
   const recorder = pickRecorder(config, wavPath, gain)
   if (!recorder) {
@@ -384,6 +392,7 @@ export function capture(config: CaptureConfig, handlers: CaptureHandlers): Promi
         loudest: state.loudest,
         periodicity: strength,
         clipped,
+        gain,
         print,
       })
     }

@@ -39,7 +39,8 @@ export async function listen(
     if (!raw) return ""
     const stats =
       `voiced=${captured.voicedMs}ms peak=${captured.loudest.toFixed(3)} ` +
-      `pitch=${captured.periodicity.toFixed(2)} clip=${captured.clipped.toFixed(3)}`
+      `pitch=${captured.periodicity.toFixed(2)} clip=${captured.clipped.toFixed(3)} ` +
+      `gain=${captured.gain.toFixed(3)}`
     // The mic never clearly heard speech, so whatever the model said is made up.
     // This catches hallucinations the phrase list cannot know about.
     if (isWeakSpeech(captured, config.vadThreshold * 1.5)) {
