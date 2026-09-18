@@ -13,13 +13,13 @@
   },
   "homepage": "https://github.com/rodri45l/opencode-dictate#readme",
   "files": [
-    "dist",
+    "src",
     "README.md",
     "LICENSE"
   ],
   "exports": {
     "./tui": {
-      "import": "./dist/index.js"
+      "import": "./src/index.tsx"
     }
   },
   "keywords": [
@@ -34,14 +34,13 @@
     "hands-free"
   ],
   "scripts": {
-    "build": "bun build ./src/index.tsx --outfile=dist/index.js --target=bun --format=esm --external solid-js --external '@opentui/solid' --external '@opencode-ai/plugin' --external 'node:*'",
+    "build": "bun build ./src/index.tsx --outfile=dist/index.js --target=bun --format=esm --production --external solid-js --external '@opentui/solid' --external '@opencode-ai/plugin' --external 'node:*'",
     "deploy": "mkdir -p \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate\" && cp src/*.ts src/*.tsx \"${OPENCODE_CONFIG:-$HOME/.config/opencode}/tui-plugins/opencode-dictate/\"",
     "test": "bun test",
     "samples:record": "bash scripts/record-sample.sh",
     "samples:analyze": "bun scripts/analyze-samples.ts",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun test && bun run build",
-    "prepublishOnly": "bun run build"
+    "check": "bun run typecheck && bun test && bun run build"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.31",
@@ -51,8 +50,8 @@
     "typescript": "^5.4.0"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "",
-    "@opentui/solid": ""
+    "@opencode-ai/plugin": "*",
+    "@opentui/solid": "*"
   },
   "peerDependenciesMeta": {
     "@opencode-ai/plugin": {
