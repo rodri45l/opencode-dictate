@@ -21,7 +21,7 @@ export const DEFAULT_GAIN = 0.5
  * still clips at 0.2, which made the plugin drop the user's own speech — it is
  * better to attenuate harder than to lose whole sentences.
  */
-export const MIN_GAIN = 0.1
+export const MIN_GAIN = 0.05
 export const MAX_GAIN = 1
 /**
  * Clipping that triggers a gain back-off. Measured: speech transients clip at
