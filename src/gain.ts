@@ -16,7 +16,12 @@ import { dirname, join } from "node:path"
  * climbing out of a low level is safe, whereas starting hot clips immediately.
  */
 export const DEFAULT_GAIN = 0.5
-export const MIN_GAIN = 0.2
+/**
+ * Floor for the adaptive gain. A very hot source (the RDP microphone measured)
+ * still clips at 0.2, which made the plugin drop the user's own speech — it is
+ * better to attenuate harder than to lose whole sentences.
+ */
+export const MIN_GAIN = 0.1
 export const MAX_GAIN = 1
 /**
  * Clipping that triggers a gain back-off. Measured: speech transients clip at
