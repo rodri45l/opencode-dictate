@@ -4,8 +4,15 @@
 prompts, let the agent answer your permission prompts and questions by voice, and
 watch a little status scanner react to your voice — no keyboard required.
 
-> Early development. The API and config may change. Linux/WSL first; macOS and
-> Windows are on the roadmap (see [Cross-platform](#cross-platform)).
+<p align="center">
+  <img src="docs/demo.gif" alt="Hands-free dictation in the terminal: the scanner
+  turns red while speaking, amber while transcribing, and the sentence appears in
+  the prompt." width="780">
+</p>
+
+> Early development (0.1.x): the API and config may change. Verified on **Linux/WSL
+> and macOS** with the bundled recorder — nothing to install. Windows falls back to
+> `ffmpeg` and is untested (see [Cross-platform](#cross-platform)).
 
 ## What it does
 
