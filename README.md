@@ -33,20 +33,19 @@ watch a little status scanner react to your voice — no keyboard required.
 
 ## Install
 
-Add the package to **`~/.config/opencode/opencode.json`** — the plugin list lives
-in the server config, not `tui.json`. opencode installs it with Bun at startup.
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-dictate@beta"]
-}
+```bash
+opencode plugin opencode-dictate@beta -g     # installs the package and updates tui.json
 ```
 
-Options go in the tuple form, exactly as with any other plugin:
+Then restart opencode. The first start takes a few seconds while the package is
+fetched.
 
-```json
+To configure it, turn that entry into a `[spec, options]` tuple in
+`~/.config/opencode/tui.json`:
+
+```jsonc
 {
+  "$schema": "https://opencode.ai/tui.json",
   "plugin": [
     ["opencode-dictate@beta", { "stt": "http://127.0.0.1:8080/v1" }]
   ]
@@ -56,9 +55,13 @@ Options go in the tuple form, exactly as with any other plugin:
 During the beta the package is published under the `beta` dist-tag so `latest`
 stays untouched — ask for `opencode-dictate@beta` explicitly.
 
-> **Note:** `opencode plugin opencode-dictate@beta` records the entry in
-> `tui.json`, which opencode 1.18.x does *not* load plugins from — add it to
-> `opencode.json` yourself. `tui.json` is only for local file plugins (below).
+> Listing the same package in `opencode.json` works too (it resolves against the
+> host runtime); `tui.json` is the conventional place for TUI plugins.
+
+> **For plugin authors:** a TUI plugin loaded from npm must bring its own runtime.
+> Declare `solid-js`, `@opentui/core` and `@opentui/solid` as dependencies — the
+> host has no on-disk copy to resolve them from, and a plugin that imports them
+> without declaring them is skipped silently.
 
 ### From local files (development)
 
