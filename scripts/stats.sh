@@ -13,8 +13,9 @@ done
 
 echo
 echo "github"
-if command -v gh >/dev/null; then
-  gh repo view "$repo" --json stargazerCount,forkCount,openIssuesCount,visibility 2>/dev/null \
+GH=$(command -v gh || echo "")
+if [ -n "$GH" ]; then
+  "$GH" repo view "$repo" --json stargazerCount,forkCount,openIssuesCount,visibility 2>/dev/null \
     | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
