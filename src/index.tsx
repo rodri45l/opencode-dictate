@@ -375,12 +375,17 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   // utterance is the answer; otherwise it is sent as a prompt.
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-  async function voiceLoop(): Promise<void> {
-    dbg("voiceLoop start")
+  // Generation token for the conversation loop. Starting a new loop bumps it,
+  // which invalidates any previous loop still finishing an utterance — otherwise
+  // two loops (and two recorders) end up fighting over the microphone.
+  let loopToken = 0
+
+  async function voiceLoop(token: number): Promise<void> {
+    dbg(`voiceLoop start (${token})`)
     // Guard against spinning: if the recorder yields nothing (no device, error)
     // we must not respawn in a tight loop and freeze the TUI.
     let idleRounds = 0
-    while (convOn()) {
+    while (convOn() && token === loopToken) {
       // Muted: stay in conversation mode but do not even open the microphone.
       if (muted()) {
         setStatus("idle")
@@ -395,7 +400,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       } catch (error) {
         dbg(`voice error ${error}`)
       }
-      if (!convOn()) break
+      if (!convOn() || token !== loopToken) break
       const question = pendingQuestion()
       const permission = pendingPermission()
       if (text) {
@@ -423,11 +428,16 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     api.ui.toast({ variant: on ? "success" : "info", message: on ? "Conversation mode ON" : "Conversation mode OFF" })
     if (on) {
       refreshAwaiting()
-      void voiceLoop()
+      // Only ever one loop: bumping the token makes any earlier loop exit after
+      // its in-flight capture instead of starting another one alongside this.
+      loopToken += 1
+      void voiceLoop(loopToken)
     } else {
+      // Invalidate the running loop, then end its capture now — it checks the
+      // token when the capture returns, so the recorder is not left holding the
+      // microphone either way.
+      loopToken += 1
       setAwaiting("")
-      // The loop exits on its own after the in-flight utterance, but stop the
-      // recorder now so no process is left holding the microphone.
       stopActiveRecorders()
       try {
         activeChild?.kill()
