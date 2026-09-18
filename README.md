@@ -23,6 +23,28 @@ watch a little status scanner react to your voice — no keyboard required.
   all (not captured-and-discarded), the scanner parks in violet, and the setting
   survives restarts.
 
+## The indicator
+
+It sits just above the prompt, and it is the whole user interface:
+
+```
+ scanner (f7)                 wave (f7)
+   ▁▂▃▅▇█▇▅▃▂▁▂▃▅▇               ▁▃▅▂▇█▅▃▁▃▅▇▂▁▅       ← moves with your voice
+   ███████████████               ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁       ← muted: still and parked
+```
+
+| Colour | Meaning |
+|---|---|
+| `#4E545A` grey | listening — nothing said yet (or the pause between sentences) |
+| `#FF5555` red | your voice is being captured right now |
+| `#E0A64B` amber | the utterance is being transcribed |
+| `#FFFFFF` white | a brief flash after a spoken stop |
+| `#8A6FD6` violet | muted — the microphone is not opened at all |
+
+`f7` switches between the KITT-style scanner and the amplitude wave; `f8` mutes.
+When opencode asks you a question or for permission, the label beside the bar
+says so and you can simply answer out loud.
+
 ## Requirements
 
 - opencode with TUI plugin support (a `plugin` entry in `opencode.json`).
@@ -35,6 +57,7 @@ watch a little status scanner react to your voice — no keyboard required.
 
 ```bash
 opencode plugin opencode-dictate -g          # installs the package and updates tui.json
+# restart opencode, then press f10 and talk
 ```
 
 Then restart opencode. The first start takes a few seconds while the package is
@@ -221,6 +244,54 @@ logs why it was kept or dropped — `keep`, `drop weak audio`,
 | A recorder left running | can't happen indefinitely: each recorder carries its own deadline (~63s) and exiting the TUI kills whatever is live |
 | Nothing is transcribed on macOS | the recorder must be found on `PATH` — a GUI-launched app has no `/opt/homebrew/bin`, so start opencode from Terminal |
 
+### Debugging why it does not work
+
+Set `debug: true` in the plugin options (or `VOICE_DEBUG=1`) and watch the log —
+default `/tmp/opencode/dictate-plugin.log`. Every utterance ends in **exactly one**
+decision line, which is enough to explain almost any problem:
+
+```
+keep    (voiced=2160ms peak=0.231 pitch=0.72 clip=0.000 gain=1.000) transcript="…"
+drop weak audio (voiced=640ms peak=1.000 pitch=0.60 clip=0.012 gain=1.000) …
+drop silence hallucination (…) / drop impossible speech rate (…) / drop wordless transcript (…)
+```
+
+| Field | Meaning | What it tells you |
+|---|---|---|
+| `voiced` | ms of audio above the speech threshold | `0` while you speak → the mic is silent or the wrong device |
+| `peak` | loudest sample, 0..1 | near `1.000` with `clip>0` → the input is overdriven |
+| `pitch` | quasi-periodicity, 0..1 | below `0.15` is a knock or a door, not a voice |
+| `clip` | share of saturated samples | any value means the signal was already flattened upstream |
+| `gain` | input gain used for that capture | shows whether your setting took effect |
+
+Checklist, in the order worth trying:
+
+| Symptom | Cause and fix |
+|---|---|
+| `no recorder found` | your platform has no bundled build (Windows, Linux arm64) — install `ffmpeg` |
+| Grey forever, `peak=0.000` | the microphone is muted, wrong, or the OS is not delivering audio — check the level meter in your sound settings, then set `inputDevice` to a name |
+| Nothing at all on macOS | grant the terminal **Microphone** permission, and start opencode from Terminal (a GUI launch has no `/opt/homebrew/bin` on `PATH`) |
+| Your own words dropped as *weak audio* | too much attenuation: raise `inputGain`, or lower the OS input volume instead of the plugin's |
+| `clip` above zero on every sentence | the source is too hot *before* the plugin sees it — lower the OS input level (e.g. `pactl set-source-volume RDPSource 60%`) |
+| Phantoms ("Thank you.", ".") | raise `vadThreshold`; enable `speaker` in a noisy or shared room; keep `minSpeechMs` at 300+ |
+| Sentences cut in half | raise `silenceMs` (900 → 1200) |
+| Messages sent while you pause to think | raise `silenceMs` (900 → 2500): the microphone stays open through the pause, so a resumed sentence becomes **one** message instead of two |
+| Long dictation truncated | raise `maxMs` (default 60000) |
+
+### Tuning it to your liking
+
+| You want | Change |
+|---|---|
+| to catch quieter speech | `vadThreshold` 0.05 → 0.03, and/or `inputGain` up |
+| to stop reacting to room noise | `vadThreshold` up (0.05 → 0.08) and `minSpeechMs` up |
+| more time to think mid-sentence | `silenceMs` up — costs the same delay on sentences you *had* finished |
+| to ignore other speakers | `speaker: { enabled: true }` — it learns your voice from accepted utterances (delete `…/opencode-dictate/voiceprint.json` to re-enrol) |
+| a different microphone | `inputDevice` as a name substring, e.g. `"AirPods"` |
+
+State it keeps, all under `~/.local/share/opencode/opencode-dictate/`:
+`audio.json` (input gain), `voiceprint.json` (your voice), `speech-rate.json`
+(your speaking pace). Deleting any of them resets that piece of learning.
+
 ## Cross-platform
 
 | OS | Status |
@@ -231,6 +302,23 @@ logs why it was kept or dropped — `keep`, `drop weak audio`,
 
 macOS and Windows are code-complete but untested on real hardware here — the
 device auto-detection has not been run on those platforms.
+
+## Roadmap
+
+Planned, roughly in order of value:
+
+- **Smarter end-of-utterance.** Today `silenceMs` is a blunt fixed wait. The better
+  behaviour is to send immediately when a sentence sounds finished and only grant
+  extra time when the transcript looks half-recorded (no terminal punctuation, or
+  the LLM judging it incomplete), merging whatever follows into the same message.
+- **Adaptive noise floor.** Track the room's noise floor on non-speech frames and
+  set the speech threshold at ~3× it, with hysteresis and a hangover. Removes the
+  manual `vadThreshold` and the last of the quiet-room false triggers.
+- **One gain semantics.** `inputGain` currently means different things per
+  recorder (parecord's `--volume` is weakly nonlinear, arecord ignores it). Apply
+  gain to the PCM we read, so it means the same everywhere.
+- **Recorders for Windows and Linux arm64** — those platforms still fall back to
+  `ffmpeg`/`parecord`/`arecord`/`sox`.
 
 ## License
 
