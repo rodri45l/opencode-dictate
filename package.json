@@ -1,6 +1,10 @@
 {
   "name": "opencode-dictate",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
+  "publishConfig": {
+    "tag": "beta",
+    "access": "public"
+  },
   "description": "Hands-free voice conversation mode for opencode: dictate prompts, answer questions/permissions by voice, with an animated status indicator.",
   "type": "module",
   "license": "MIT",
