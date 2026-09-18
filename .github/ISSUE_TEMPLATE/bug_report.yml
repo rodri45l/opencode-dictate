@@ -1,0 +1,55 @@
+name: Bug report
+description: Dictation doesn't work, or words get dropped / invented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The single most useful thing you can include is the
+        **decision line** the plugin writes for each utterance — it explains almost
+        every problem on its own.
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: "e.g. WSL2 Ubuntu 24.04 / macOS 26 arm64 / Windows 11"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: opencode and plugin versions
+      placeholder: "opencode 1.18.31, opencode-dictate 0.1.2"
+    validations:
+      required: true
+  - type: input
+    id: stt
+    attributes:
+      label: Speech-to-text backend
+      placeholder: "Groq whisper-large-v3-turbo / local faster-whisper on :8080"
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision lines from the debug log
+      description: |
+        Set `debug: true` in your plugin options, reproduce the problem, then paste
+        the relevant lines from the log (default `/tmp/opencode/dictate-plugin.log`).
+      placeholder: |
+        keep (voiced=2160ms peak=0.231 pitch=0.72 clip=0.000 gain=1.000) transcript="…"
+        drop weak audio (voiced=640ms peak=1.000 pitch=0.60 clip=0.012) transcript="…"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        The troubleshooting table and the field-by-field explanation of that log
+        line are in the README under *Troubleshooting*, *Debugging why it does not
+        work* and *Tuning it to your liking*.

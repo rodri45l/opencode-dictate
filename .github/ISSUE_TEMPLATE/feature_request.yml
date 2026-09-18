@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an idea or a change in behaviour
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve?
+      description: Describe the situation, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+  - type: input
+    id: platform
+    attributes:
+      label: Platform (if it is platform-specific)
