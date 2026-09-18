@@ -79,6 +79,9 @@ const AMBER = "#E0A64B"
 const IDLE = "#4E545A"
 // Muted: a still, dull bar — deliberately flatter than the idle sweep.
 const MUTED = "#3A3E44"
+// Shown instead of any text while muted: the crossed-out speaker is the
+// conventional mute symbol and reads the same in every language.
+const MUTE_ICON = "🔇"
 // Scanner flash shown for a moment after a spoken stop.
 const ALERT = "#FFFFFF"
 
@@ -533,12 +536,11 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
     // Text is only for things the scanner cannot express: a transient notice or
     // a pending question. Recording vs transcribing is the scanner colour.
     const label = () => {
-      if (muted()) return "muted"
       if (notice()) return notice()
       if (convOn() && awaiting()) return `? ${awaiting()} — speak`
       return ""
     }
-    const color = () => (muted() ? MUTED : notice() ? RED : awaiting() ? YELLOW : GREEN)
+    const color = () => (notice() ? RED : awaiting() ? YELLOW : GREEN)
     // speech = red, transcribing = amber, listening-but-silent / idle = dim.
     const scannerColor = () => {
       if (muted()) return MUTED
@@ -559,6 +561,10 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
             >
               <Waves color={scannerColor()} level={muted() ? 0 : level()} alert={alertColor() !== ""} />
             </Show>
+          </Show>
+          {/* Mute is shown as a symbol, never as text. */}
+          <Show when={muted()}>
+            <text fg={MUTED}>{MUTE_ICON}</text>
           </Show>
           <Show when={label() !== ""}>
             <text fg={color()}>{label()}</text>
