@@ -325,6 +325,13 @@ Planned, roughly in order of value:
 - **Recorders for Windows and Linux arm64** — those platforms still fall back to
   `ffmpeg`/`parecord`/`arecord`/`sox`.
 
+
+## Not affiliated with OpenCode
+
+This is a community plugin. It is **not built by the OpenCode team** and is not
+affiliated with them in any way — the "opencode" in the name only says what it
+plugs into.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
