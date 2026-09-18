@@ -266,16 +266,19 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   // had). Resolve one on demand: the slot, the current route, or, at home,
   // create a session and navigate to it so dictation works from the first word.
   async function ensureSession(): Promise<string | undefined> {
-    if (sessionId) return sessionId
+    // The route is the truth: it names the session currently on screen. The id
+    // from the slot is only a fallback, because caching it means that switching
+    // sessions in the TUI would keep sending voice to the session you left.
     const route = api.route?.current
     if (route?.name === "session") {
       const fromRoute = (route.params as { sessionID?: string } | undefined)?.sessionID
       if (fromRoute) {
+        if (fromRoute !== sessionId) dbg(`session follows route: ${fromRoute}`)
         sessionId = fromRoute
-        dbg(`session from route: ${fromRoute}`)
         return fromRoute
       }
     }
+    if (sessionId) return sessionId
     const client = api.client as unknown as {
       session?: {
         create?: (options: { body?: { title?: string }; query: { directory: string } }) => Promise<{
@@ -312,7 +315,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       api.ui.toast({ variant: "warning", message: "Dictation: no session to send to" })
       return
     }
-    dbg(`send -> ${text.slice(0, 60)}`)
+    dbg(`send -> [${id.slice(-6)}] ${text.slice(0, 60)}`)
     try {
       await promptClient().session.promptAsync({
         sessionID: id,
