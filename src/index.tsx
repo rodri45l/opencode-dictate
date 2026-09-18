@@ -77,11 +77,9 @@ const GREEN = "#9CAF8B"
 const YELLOW = "#E5C07B"
 const AMBER = "#E0A64B"
 const IDLE = "#4E545A"
-// Muted: a still, dull bar — deliberately flatter than the idle sweep.
-const MUTED = "#3A3E44"
-// Shown instead of any text while muted: the crossed-out speaker is the
-// conventional mute symbol and reads the same in every language.
-const MUTE_ICON = "🔇"
+// Muted: a noticeably darker grey than the idle sweep, so the colour alone
+// carries the state. Mute is indicated by colour and nothing else.
+const MUTED = "#2E3237"
 // Scanner flash shown for a moment after a spoken stop.
 const ALERT = "#FFFFFF"
 
@@ -490,7 +488,7 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   // KITT / Knight Rider sweeping scanner. Its colour IS the status: red while
   // you are speaking, amber while transcribing, dim while listening in silence
   // or idle (the engine emits PHASE:speech / PHASE:silence for this).
-  function Scanner(props: { color: string; alert?: boolean; frozen?: boolean }): JSX.Element {
+  function Scanner(props: { color: string; alert?: boolean }): JSX.Element {
     const WIDTH = 13
     const TAIL = 4
     const [tick, setTick] = createSignal(0)
@@ -505,12 +503,6 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
       return `#${rgb.map((v) => Math.round(v * k).toString(16).padStart(2, "0")).join("")}`
     }
     const cells = () => {
-      // Muted: a still, uniformly dim bar. The absence of motion is the signal.
-      if (props.frozen) {
-        const still: JSX.Element[] = []
-        for (let i = 0; i < WIDTH; i++) still.push(<span style={{ fg: shade(0.22) }}>{"█"}</span>)
-        return still
-      }
       // Alert: the whole bar pulses together (a strobe), which reads very
       // differently from the normal left-right sweep.
       if (props.alert) {
@@ -557,14 +549,10 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
           <Show when={convOn()}>
             <Show
               when={indicator() === "waves"}
-              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} frozen={muted()} />}
+              fallback={<Scanner color={scannerColor()} alert={alertColor() !== ""} />}
             >
-              <Waves color={scannerColor()} level={muted() ? 0 : level()} alert={alertColor() !== ""} />
+              <Waves color={scannerColor()} level={level()} alert={alertColor() !== ""} />
             </Show>
-          </Show>
-          {/* Mute is shown as a symbol, never as text. */}
-          <Show when={muted()}>
-            <text fg={MUTED}>{MUTE_ICON}</text>
           </Show>
           <Show when={label() !== ""}>
             <text fg={color()}>{label()}</text>
