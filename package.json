@@ -1,6 +1,6 @@
 {
   "name": "opencode-dictate",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "publishConfig": {
     "tag": "beta",
     "access": "public"
@@ -49,13 +49,12 @@
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.31",
     "@opencode-ai/sdk": "^1.18.31",
-    "@opentui/solid": "^0.5.11",
     "@types/bun": "latest",
     "typescript": "^5.4.0"
   },
   "dependencies": {
-    "@opentui/core": "^0.5.11",
-    "@opentui/solid": "^0.5.11",
+    "@opentui/core": "^0.4.5",
+    "@opentui/solid": "^0.4.5",
     "solid-js": "^1.9.12"
   },
   "peerDependencies": {
