@@ -260,12 +260,62 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   const promptClient = () =>
     api.client as unknown as { session: { promptAsync: (input: unknown) => Promise<unknown> } }
 
+  // The session_prompt slot only reveals its id once a session view exists, so a
+  // brand-new instance sitting on the home screen had no session at all — and
+  // every dictated sentence was dropped in silence (the worst failure mode we
+  // had). Resolve one on demand: the slot, the current route, or, at home,
+  // create a session and navigate to it so dictation works from the first word.
+  async function ensureSession(): Promise<string | undefined> {
+    if (sessionId) return sessionId
+    const route = api.route?.current
+    if (route?.name === "session") {
+      const fromRoute = (route.params as { sessionID?: string } | undefined)?.sessionID
+      if (fromRoute) {
+        sessionId = fromRoute
+        dbg(`session from route: ${fromRoute}`)
+        return fromRoute
+      }
+    }
+    const client = api.client as unknown as {
+      session?: {
+        create?: (options: { body?: { title?: string }; query: { directory: string } }) => Promise<{
+          data?: { id?: string }
+        }>
+      }
+    }
+    try {
+      const created = await client.session?.create?.({
+        body: { title: "Voice" },
+        query: { directory: api.state.path.directory },
+      })
+      const id = created?.data?.id
+      if (!id) return undefined
+      sessionId = id
+      dbg(`session created: ${id}`)
+      try {
+        api.route?.navigate("session", { sessionID: id })
+      } catch (error) {
+        dbg(`navigate failed: ${error}`)
+      }
+      return id
+    } catch (error) {
+      dbg(`session create failed: ${error}`)
+      return undefined
+    }
+  }
+
   async function sendPrompt(text: string): Promise<void> {
-    if (!sessionId) return
+    const id = await ensureSession()
+    if (!id) {
+      // Never swallow a transcript silently: say why nothing happened.
+      dbg("send aborted: no session available")
+      api.ui.toast({ variant: "warning", message: "Dictation: no session to send to" })
+      return
+    }
     dbg(`send -> ${text.slice(0, 60)}`)
     try {
       await promptClient().session.promptAsync({
-        sessionID: sessionId,
+        sessionID: id,
         parts: [{ type: "text", text }],
         system: VOICE_SYSTEM,
       })
@@ -351,11 +401,12 @@ const tui: TuiPlugin = async (api: TuiPluginApi, pluginOptions?: VoiceOptions) =
   async function interruptSession(spoken: string): Promise<void> {
     dbg(`voice interrupt: "${spoken}"`)
     flashAlert(ALERT)
-    if (!sessionId) return
+    const id = await ensureSession()
+    if (!id) return
     try {
       await (api.client as unknown as {
         session: { abort: (input: unknown) => Promise<unknown> }
-      }).session.abort({ sessionID: sessionId })
+      }).session.abort({ sessionID: id })
     } catch (error) {
       dbg(`abort failed: ${error}`)
     }
