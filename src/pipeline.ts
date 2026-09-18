@@ -66,14 +66,21 @@ export async function listen(
     if (config.speaker.enabled && captured.print) {
       const profile = loadProfile()
       if (profile.count < config.speaker.minSamples) {
-        // Score before enrolling: shows how consistent the voice is, which is
-        // what the threshold has to sit below.
-        const agreement = profile.count === 0 ? 1 : similarity(captured.print, profile)
-        const next = enroll(profile, captured.print)
-        saveProfile(next)
-        options.log?.(
-          `speaker learning (${next.count}/${config.speaker.minSamples}, similarity=${agreement.toFixed(2)})`,
-        )
+        // Never learn from a saturated clip. Clipping distorts the MFCCs enough
+        // to poison the profile — it later scored the user's own voice negative,
+        // and every utterance was rejected as another speaker.
+        if (captured.clipped > 0) {
+          options.log?.(`speaker skip (saturated clip, ${stats})`)
+        } else {
+          // Score before enrolling: shows how consistent the voice is, which is
+          // what the threshold has to sit below.
+          const agreement = profile.count === 0 ? 1 : similarity(captured.print, profile)
+          const next = enroll(profile, captured.print)
+          saveProfile(next)
+          options.log?.(
+            `speaker learning (${next.count}/${config.speaker.minSamples}, similarity=${agreement.toFixed(2)})`,
+          )
+        }
       } else {
         const score = similarity(captured.print, profile)
         // "Thank you." and friends are Whisper's default output for anything
