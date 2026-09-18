@@ -28,21 +28,33 @@ out="$here/bin/${os}-${arch}"
 mkdir -p "$out"
 name="$out/opencode-dictate-recorder"
 
+# Never bake the build machine into the binary: miniaudio references its own
+# filename, so without this the shipped binary contains /home/<user>/... and the
+# username with it. -s strips the remaining symbols.
+here_real="$(cd "$here" && pwd)"
+if [ "$os" = darwin ]; then
+  path_flags="-fdebug-prefix-map=$here_real=. -fmacro-prefix-map=$here_real=. -ffile-prefix-map=$here_real=."
+  strip_flag=""
+else
+  path_flags="-ffile-prefix-map=$here_real=. -fmacro-prefix-map=$here_real=."
+  strip_flag="-s"
+fi
+
 if [ "$os" = darwin ]; then
   # Build both architectures so an Intel Mac is covered from the same machine.
   if [ "${1:-}" = "--both-arches" ]; then
     for a in arm64 x86_64; do
       d="$here/bin/darwin-$([ "$a" = arm64 ] && echo arm64 || echo x64)"
       mkdir -p "$d"
-      "$cc" -O2 -arch "$a" -o "$d/opencode-dictate-recorder" "$src" \
+      "$cc" -O2 $path_flags -arch "$a" -o "$d/opencode-dictate-recorder" "$src" \
         -framework CoreAudio -framework AudioToolbox -framework CoreFoundation
       echo "built $d/opencode-dictate-recorder"
     done
     exit 0
   fi
-  "$cc" -O2 -o "$name" "$src" -framework CoreAudio -framework AudioToolbox -framework CoreFoundation
+  "$cc" -O2 $path_flags -o "$name" "$src" -framework CoreAudio -framework AudioToolbox -framework CoreFoundation
 else
-  "$cc" -O2 -o "$name" "$src" -lm -lpthread -ldl
+  "$cc" -O2 $path_flags $strip_flag -o "$name" "$src" -lm -lpthread -ldl
 fi
 
 echo "built $name"
