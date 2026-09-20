@@ -74,3 +74,17 @@ export function actionFromText(text: string): CleanAction {
   if (text.includes("[[DENY]]")) return "deny"
   return "none"
 }
+
+/** Remove any sentinel token from a string (used when overriding the decision). */
+const ALL_TOKENS = /\[\[(STOP|CONVERSATION_OFF|ALLOW|ALWAYS|DENY)\]\]/gi
+export function stripActionTokens(text: string): string {
+  return text.replace(ALL_TOKENS, "").replace(/\s+/g, " ").trim()
+}
+
+/** Replace whatever action a cleaned string carries with this one. */
+export function withAction(text: string, action: CleanAction): string {
+  const body = stripActionTokens(text)
+  const token = actionToken(action)
+  if (!token) return body
+  return body ? `${body} ${token}` : token
+}

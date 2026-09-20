@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { classifyControl, classifyPermission } from "../src/sentinels"
+import { classifyControl, classifyPermission, withAction } from "../src/sentinels"
 
 describe("classifyControl", () => {
   test("detects leaving conversation mode", () => {
@@ -39,5 +39,17 @@ describe("classifyPermission", () => {
 
   test("returns null when the speaker did not answer", () => {
     expect(classifyPermission("what does this permission do?")).toBeNull()
+  })
+})
+
+describe("withAction", () => {
+  test("replaces whatever action the text carried", () => {
+    expect(withAction("stop it [[STOP]]", "none")).toBe("stop it")
+    expect(withAction("go ahead", "allow")).toBe("go ahead [[ALLOW]]")
+    expect(withAction("yes [[ALLOW]]", "deny")).toBe("yes [[DENY]]")
+  })
+
+  test("an action with no text is just the token", () => {
+    expect(withAction("", "stop")).toBe("[[STOP]]")
   })
 })

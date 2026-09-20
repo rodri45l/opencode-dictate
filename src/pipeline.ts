@@ -6,7 +6,7 @@ import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
 import { isArtifact, isSilenceHallucination, isWeakSpeech, isWordless } from "./hallucination"
-import { actionFromText } from "./sentinels"
+import { actionFromText, withAction, type CleanAction } from "./sentinels"
 import { isImplausibleRate, learnRate, loadRate, rateLimit, saveRate } from "./rate"
 import { enroll, loadProfile, saveProfile, similarity } from "./voiceprint"
 
@@ -16,6 +16,36 @@ export interface ListenOptions {
   /** Optional sink for drop decisions, so they can be tuned from real audio. */
   log?: (message: string) => void
 }
+
+/**
+ * Ask the local decision service what it thinks, without ever letting it break
+ * the pipeline: a missing or slow service is a missing opinion, not an error.
+ */
+async function askGate(
+  config: VoiceConfig,
+  text: string,
+  mode: "control" | "permission",
+): Promise<{ action: CleanAction; confidence: number } | null> {
+  if (!config.gate?.url) return null
+  try {
+    const response = await fetch(`${config.gate.url}/decide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, mode }),
+      signal: AbortSignal.timeout(2_000),
+    })
+    if (!response.ok) return null
+    const body = (await response.json()) as { action?: string; confidence?: number }
+    const action = (body.action === "prompt" ? "none" : body.action) as CleanAction | undefined
+    return {
+      action: action ?? "none",
+      confidence: typeof body.confidence === "number" ? body.confidence : 0,
+    }
+  } catch {
+    return null
+  }
+}
+
 
 export async function listen(
   config: VoiceConfig,
@@ -107,15 +137,28 @@ export async function listen(
   // learn their pace from it (a hallucination cannot get here).
   saveRate(learnRate(rateProfile, raw, captured.voicedMs, limit))
   options.log?.(`keep (${stats}) transcript="${raw}"`)
-  if (!config.llm) {
-    options.log?.(`timing listen=${listenMs}ms stt=${sttMs}ms clean=0ms`)
-    return raw
-  }
+
+  // The local decision model runs alongside the LLM. In shadow mode (the
+  // default) its verdict is only recorded, so the two can be compared on real
+  // speech before anything depends on it.
+  const gate = await askGate(config, raw, options.permission ? "permission" : "control")
+
   const cleanStarted = Date.now()
-  const cleaned = await clean(raw, config.llm, { control: options.control, permission: options.permission })
-  options.log?.(`timing listen=${listenMs}ms stt=${sttMs}ms clean=${Date.now() - cleanStarted}ms`)
-  // Record the decision itself: the logs already hold the audio and the
-  // transcript, but without this there is no way to build a labelled set later.
-  options.log?.(`action=${actionFromText(cleaned)} transcript="${raw}"`)
-  return cleaned
+  const cleaned = config.llm
+    ? await clean(raw, config.llm, { control: options.control, permission: options.permission })
+    : raw
+  options.log?.(`timing listen=${listenMs}ms stt=${sttMs}ms clean=${config.llm ? Date.now() - cleanStarted : 0}ms`)
+
+  const llmAction = actionFromText(cleaned)
+  const decisive =
+    gate !== null && config.gate !== null && !config.gate.shadow && gate.confidence >= config.gate.threshold
+  const action = decisive ? gate.action : llmAction
+  // Record the decision and, when a gate is configured, both opinions: that is
+  // the labelled pair a future trained model would be built from.
+  options.log?.(
+    `action=${action} llm=${llmAction}` +
+      (gate ? ` gate=${gate.action}@${gate.confidence.toFixed(2)}` : "") +
+      ` source=${decisive ? "gate" : "llm"} transcript="${raw}"`,
+  )
+  return decisive ? withAction(cleaned, gate.action) : cleaned
 }

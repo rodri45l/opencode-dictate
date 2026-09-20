@@ -17,10 +17,14 @@ type Mode = "control" | "permission" | "unknown"
 type Action = "prompt" | "stop" | "conversation_off" | "allow" | "always" | "deny" | "nonspeech"
 
 interface Row {
+  /** The teacher label: what the LLM decided (or the curated expectation). */
   text: string
   action: Action
   mode: Mode
   source: "log" | "curated"
+  /** What the local decision service would have said, when one was configured. */
+  gate?: Action | null
+  gateConfidence?: number | null
   at?: string
 }
 
@@ -63,12 +67,26 @@ function parseLog(path: string, rows: Row[]): number {
       continue
     }
 
-    // A decision line wins: it says what the model actually chose.
+    // A decision line wins, and now carries both opinions:
+    //   action=<effective> llm=<teacher> gate=<student>@<confidence> source=…
+    // The teacher (the LLM) is the label; the gate is what we want to score
+    // against it, which is how we decide whether it can take over.
     if (pending && line.includes("action=")) {
-      const action = (line.match(/action=([a-z_]+)/)?.[1] ?? "prompt") as Action
+      const llm = line.match(/llm=([a-z_]+)/)?.[1]
+      const effective = line.match(/action=([a-z_]+)/)?.[1]
+      const gateMatch = line.match(/gate=([a-z_]+)@([0-9.]+)/)
+      const label = (llm ?? effective ?? "prompt") as Action
       const mode: Mode =
-        action === "allow" || action === "always" || action === "deny" ? "permission" : "control"
-      rows.push({ text: pending.text, action, mode, source: "log", at: pending.at })
+        label === "allow" || label === "always" || label === "deny" ? "permission" : "control"
+      rows.push({
+        text: pending.text,
+        action: label,
+        mode,
+        source: "log",
+        gate: gateMatch ? (gateMatch[1] as Action) : null,
+        gateConfidence: gateMatch ? Number(gateMatch[2]) : null,
+        at: pending.at,
+      })
       added += 1
       pending = null
       continue
@@ -122,3 +140,17 @@ console.log(`\n  wrote ${rows.length} rows -> ${OUT}`)
 console.log(`  by action: ${tally((r) => r.action)}`)
 console.log(`  by source: ${tally((r) => r.source)}`)
 console.log(`  by mode:   ${tally((r) => r.mode)}`)
+
+// How well would the local model have imitated the teacher? This is the number
+// that decides whether it can take over — measured on real speech, not fixtures.
+const both = rows.filter((r) => r.gate)
+if (both.length > 0) {
+  const agree = both.filter((r) => r.gate === r.action).length
+  const wrongConfident = both.filter((r) => r.gate !== r.action && (r.gateConfidence ?? 0) >= 0.8).length
+  console.log(
+    `  gate vs teacher on ${both.length} rows: agreement ${((agree / both.length) * 100).toFixed(0)}%` +
+      `, confident disagreement ${wrongConfident}`,
+  )
+} else {
+  console.log("  gate: no shadow decisions recorded yet")
+}

@@ -26,11 +26,22 @@ export interface LlmConfig {
   structured?: boolean
 }
 
+export interface GateConfig {
+  /** Local decision service (servers/laya/decide.py). */
+  url: string
+  /** Act on the gate only above this calibrated confidence (default 0.6). */
+  threshold: number
+  /** Log the gate's decision but keep using the LLM's (default true). */
+  shadow: boolean
+}
+
 export interface VoiceOptions {
   /** "http://…/v1" or { url, key, model } */
   stt?: string | { url?: string; key?: string; model?: string }
   /** Optional override; by default the LLM opencode is configured with is used. */
-  llm?: string | { url?: string; key?: string; model?: string }
+  llm?: string | { url?: string; key?: string; model?: string; structured?: boolean }
+  /** Local decision service evaluated alongside the LLM (see servers/laya). */
+  gate?: { url?: string; threshold?: number; shadow?: boolean }
   /** Force the builtin pipeline or an external recorder/transcriber command. */
   backend?: "builtin" | "command"
   /** Command to run for backend "command" (default: "dictate" on PATH). */
@@ -65,6 +76,8 @@ export interface VoiceOptions {
 export interface VoiceConfig {
   stt: SttConfig | null
   llm: LlmConfig | null
+  /** Local decision service evaluated alongside the LLM (null when unset). */
+  gate: GateConfig | null
   backend: "builtin" | "command" | "auto"
   /** Command used by backend "command". */
   command: string
@@ -133,9 +146,19 @@ export function loadConfig(options: VoiceOptions = {}): VoiceConfig {
         }
       : resolveOpencodeLlm())
 
+  const gate: GateConfig | null = options.gate?.url
+    ? {
+        url: base(options.gate.url),
+        threshold: typeof options.gate.threshold === "number" ? options.gate.threshold : 0.6,
+        // Shadow by default: log what the gate would decide, act on the LLM.
+        shadow: options.gate.shadow !== false,
+      }
+    : null
+
   return {
     stt,
     llm,
+    gate,
     backend: options.backend ?? ((env("VOICE_BACKEND") as VoiceConfig["backend"]) || "auto"),
     command: options.command ?? (env("VOICE_COMMAND") || "dictate"),
     silenceMs: num(options.silenceMs ?? Number(env("VOICE_SILENCE_MS")), 900),
