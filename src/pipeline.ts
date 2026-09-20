@@ -6,6 +6,7 @@ import { capture, type CaptureHandlers } from "./audio"
 import { transcribe } from "./stt"
 import { clean } from "./cleanup"
 import { isArtifact, isSilenceHallucination, isWeakSpeech, isWordless } from "./hallucination"
+import { actionFromText } from "./sentinels"
 import { isImplausibleRate, learnRate, loadRate, rateLimit, saveRate } from "./rate"
 import { enroll, loadProfile, saveProfile, similarity } from "./voiceprint"
 
@@ -113,5 +114,8 @@ export async function listen(
   const cleanStarted = Date.now()
   const cleaned = await clean(raw, config.llm, { control: options.control, permission: options.permission })
   options.log?.(`timing listen=${listenMs}ms stt=${sttMs}ms clean=${Date.now() - cleanStarted}ms`)
+  // Record the decision itself: the logs already hold the audio and the
+  // transcript, but without this there is no way to build a labelled set later.
+  options.log?.(`action=${actionFromText(cleaned)} transcript="${raw}"`)
   return cleaned
 }

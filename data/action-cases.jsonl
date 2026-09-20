@@ -1,0 +1,31 @@
+{"text":"write a simple sentence","mode":"control","action":"prompt"}
+{"text":"add a test for the parser","mode":"control","action":"prompt"}
+{"text":"run the tests again","mode":"control","action":"prompt"}
+{"text":"what does this function do","mode":"control","action":"prompt"}
+{"text":"fix the parser bug","mode":"control","action":"prompt"}
+{"text":"stop","mode":"control","action":"stop"}
+{"text":"stop it","mode":"control","action":"stop"}
+{"text":"hold on","mode":"control","action":"stop"}
+{"text":"wait a second","mode":"control","action":"stop"}
+{"text":"cancel that","mode":"control","action":"stop"}
+{"text":"para","mode":"control","action":"stop"}
+{"text":"stop the server","mode":"control","action":"prompt","note":"mentions stop, is not a command"}
+{"text":"how do I stop the process","mode":"control","action":"prompt","note":"negation"}
+{"text":"don't stop the build","mode":"control","action":"prompt","note":"negation"}
+{"text":"the build stopped working","mode":"control","action":"prompt","note":"negation"}
+{"text":"can you make it stop retrying","mode":"control","action":"prompt","note":"negation"}
+{"text":"stop conversation mode","mode":"control","action":"conversation_off"}
+{"text":"leave conversation mode","mode":"control","action":"conversation_off"}
+{"text":"turn off the microphone","mode":"control","action":"conversation_off"}
+{"text":"yes","mode":"permission","action":"allow"}
+{"text":"go ahead","mode":"permission","action":"allow"}
+{"text":"allow it","mode":"permission","action":"allow"}
+{"text":"yes always","mode":"permission","action":"always"}
+{"text":"always allow","mode":"permission","action":"always"}
+{"text":"don't ask again","mode":"permission","action":"always"}
+{"text":"no","mode":"permission","action":"deny"}
+{"text":"deny","mode":"permission","action":"deny"}
+{"text":"never","mode":"permission","action":"deny"}
+{"text":"no, don't run that","mode":"permission","action":"deny"}
+{"text":"what does that command do","mode":"permission","action":"prompt"}
+{"text":"yes but change the path first","mode":"permission","action":"prompt","note":"answering with a change, not a bare yes"}

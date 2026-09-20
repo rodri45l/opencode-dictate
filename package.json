@@ -47,7 +47,8 @@
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun test && bun run build",
     "build:tui": "bun scripts/build-tui.mjs",
-    "build:recorder": "scripts/build-recorder.sh"
+    "build:recorder": "scripts/build-recorder.sh",
+    "dataset": "bun scripts/build-dataset.ts"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.31",

@@ -64,3 +64,13 @@ export function actionToken(action: CleanAction): string {
       return ""
   }
 }
+
+/** Which action a cleaned string carries (the token is appended by cleanup). */
+export function actionFromText(text: string): CleanAction {
+  if (text.includes("[[STOP]]")) return "stop"
+  if (text.includes("[[CONVERSATION_OFF]]")) return "conversation_off"
+  if (text.includes("[[ALLOW]]")) return "allow"
+  if (text.includes("[[ALWAYS]]")) return "always"
+  if (text.includes("[[DENY]]")) return "deny"
+  return "none"
+}
