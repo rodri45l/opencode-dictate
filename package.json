@@ -1,6 +1,6 @@
 {
   "name": "opencode-dictate",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publishConfig": {
     "tag": "latest",
     "access": "public"

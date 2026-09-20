@@ -1,0 +1,25 @@
+# opencode-dictate local speech-to-text daemon.
+#
+# Install:
+#   cp servers/faster-whisper/opencode-dictate-stt.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now opencode-dictate-stt.service
+#   loginctl enable-linger "$USER"   # start at boot, without a login session
+#
+# Then point the plugin at it (tui.json):
+#   ["opencode-dictate", { "stt": "http://127.0.0.1:8080/v1" }]
+[Unit]
+Description=opencode-dictate local STT server (faster-whisper)
+Documentation=https://github.com/rodri45l/opencode-dictate
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/opencode-dictate/scripts/serve-stt.sh
+# The GPU model takes a while to load before it starts answering.
+TimeoutStartSec=180
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

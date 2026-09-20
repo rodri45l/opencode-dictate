@@ -23,12 +23,18 @@ export async function listen(
 ): Promise<string> {
   if (!config.stt) throw new Error("no speech-to-text configured — set VOICE_STT_URL")
 
+  const listenStarted = Date.now()
   const captured = await capture(config, handlers)
+  // How long the microphone was open for this utterance: this includes the
+  // end-of-speech silence window, which is the largest controllable cost we have.
+  const listenMs = Date.now() - listenStarted
   // The clip lives only in memory, so a discard needs no cleanup.
   if (!captured.hadSpeech) return ""
   handlers.onPhase("transcribing")
 
+  const sttStarted = Date.now()
   const raw = await transcribe(captured.wav, config.stt)
+  const sttMs = Date.now() - sttStarted
   if (!raw) return ""
   const stats =
     `voiced=${captured.voicedMs}ms peak=${captured.loudest.toFixed(3)} ` +
@@ -100,6 +106,12 @@ export async function listen(
   // learn their pace from it (a hallucination cannot get here).
   saveRate(learnRate(rateProfile, raw, captured.voicedMs, limit))
   options.log?.(`keep (${stats}) transcript="${raw}"`)
-  if (!config.llm) return raw
-  return await clean(raw, config.llm, { control: options.control, permission: options.permission })
+  if (!config.llm) {
+    options.log?.(`timing listen=${listenMs}ms stt=${sttMs}ms clean=0ms`)
+    return raw
+  }
+  const cleanStarted = Date.now()
+  const cleaned = await clean(raw, config.llm, { control: options.control, permission: options.permission })
+  options.log?.(`timing listen=${listenMs}ms stt=${sttMs}ms clean=${Date.now() - cleanStarted}ms`)
+  return cleaned
 }

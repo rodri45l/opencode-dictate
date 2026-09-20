@@ -19,6 +19,11 @@ export interface LlmConfig {
   model: string
   /** Provider id, e.g. "opencode-go", "deepseek", or "custom". */
   provider: string
+  /**
+   * Ask for a constrained JSON response ({"text","action"}). Unset means "only for
+   * a local endpoint", where a schema or grammar guarantees a valid action.
+   */
+  structured?: boolean
 }
 
 export interface VoiceOptions {
